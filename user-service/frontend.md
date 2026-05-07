@@ -18,35 +18,66 @@ In the broader microservice topology (see [`backend/README.md`](../README.md)), 
 
 ## 2. How to run it locally
 
-### Prerequisites
-- **JDK 21**
-- **Maven** (or use `mvnw` from the repo root)
-- **MySQL 8** running locally with a database called `virtual_office`
+### Prerequisites — that's it
+- **JDK 21** with `JAVA_HOME` pointing at it
+- **Docker** installed and running (Docker Desktop on Windows/macOS)
+
+You do **not** need to install MySQL, RabbitMQ, or anything else manually. The service ships a `docker-compose.yml` and the `spring-boot-docker-compose` integration brings the dependencies up at startup and tears them down on shutdown.
+
+### Start the service
+```bash
+# Linux / macOS
+export JAVA_HOME=/path/to/jdk21
+cd backend
+./mvnw -pl user-service spring-boot:run
+
+# Windows (PowerShell)
+$env:JAVA_HOME = "C:\path\to\jdk21"
+cd backend
+.\mvnw.cmd -pl user-service spring-boot:run
+```
+
+What happens on startup, automatically:
+1. Spring Boot reads [`user-service/docker-compose.yml`](docker-compose.yml), runs `docker compose up`, waits until MySQL and RabbitMQ are healthy.
+2. Hibernate creates/updates the `users` and `verification_request` tables on the freshly started MySQL (`ddl-auto=update`).
+3. Tomcat listens on **`http://localhost:8081`**.
+4. **Ctrl+C** → Spring Boot runs `docker compose down` automatically.
+
+### Caveats
+
+- **Port 3306 must be free.** If you have a local MySQL Windows service running, the Docker container can't bind. Stop it once from an **elevated PowerShell**:
+  ```powershell
+  Stop-Service MySQL80 -Force
+  Set-Service MySQL80 -StartupType Manual   # don't auto-start on boot
+  ```
+  Same applies to RabbitMQ on `:5672` if you've ever installed it locally.
+- **Docker Desktop must be running** before `mvnw spring-boot:run` — otherwise the compose step fails immediately.
+- The compose file persists data under `user-service/data/mysql` and `user-service/data/rabbitmq`. Delete those folders to reset to a clean DB.
 
 ### Configuration ([src/main/resources/application.properties](src/main/resources/application.properties))
 ```properties
 server.port=8081
 spring.application.name=user-service
 
+# auto-managed by docker-compose.yml at startup
 spring.datasource.url=jdbc:mysql://localhost:3306/virtual_office
 spring.datasource.username=root
-spring.datasource.password=your_password   # ← change before running
+spring.datasource.password=rootpassword
 
-spring.jpa.hibernate.ddl-auto=update       # Hibernate auto-creates/updates tables
+spring.jpa.hibernate.ddl-auto=update
 spring.jpa.show-sql=true
 spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
+
+spring.rabbitmq.host=localhost
+spring.rabbitmq.port=5672
+spring.rabbitmq.username=guest
+spring.rabbitmq.password=guest
+
+spring.docker.compose.lifecycle-management=start-and-stop
+
+jwt.secret=your-very-strong-secret-key-must-be-at-least-32-characters-long
+jwt.expiration=86400000
 ```
-
-> ⚠️ Replace `your_password` with the actual MySQL root password before launching.
-
-### Start the service
-```bash
-# from the user-service directory
-./mvnw spring-boot:run        # Linux / macOS
-mvnw.cmd spring-boot:run      # Windows
-```
-
-Service comes up on **`http://localhost:8081`**.
 
 In the deployed topology, all client traffic goes through the **Gateway API** on port `8080`, which forwards to the User Service. For local frontend dev you can call `:8081` directly until the Gateway is configured.
 

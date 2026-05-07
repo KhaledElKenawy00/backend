@@ -36,3 +36,6 @@ target/
 
 chat-service/chat-service-arc.md
 chat-service/implementation-steps.txt
+
+*.claude
+*/data/*
