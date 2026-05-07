@@ -31,7 +31,7 @@ public class Message {
 
     private Integer senderId;
 
-    // needed for admin-vs-admin delete checks
+    // captured at send time so the admin-vs-admin delete rule still works after a role change
     private String senderRole;
     private String content;
 

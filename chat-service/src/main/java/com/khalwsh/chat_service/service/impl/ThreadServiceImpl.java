@@ -34,7 +34,6 @@ public class ThreadServiceImpl implements ThreadService {
 
     @Override
     public ThreadResponse createThread(String channelId, CreateThreadRequest request, Integer creatorUserId, String creatorRole) {
-        // must be in the channel
         if (!channelService.isMember(channelId, creatorUserId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "you are not a member of this channel");
         }
@@ -42,21 +41,18 @@ public class ThreadServiceImpl implements ThreadService {
         ObjectId channelOid = new ObjectId(channelId);
         ObjectId rootMessageOid = new ObjectId(request.getRootMessageId());
 
-        // root msg must exist
         Message rootMessage = messageRepository.findById(rootMessageOid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "root message not found"));
 
-        // and belong to this channel
         if (!rootMessage.getChannelId().equals(channelOid)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "message does not belong to this channel");
         }
 
-        // can't branch a thread off a thread-reply
+        // disallow nested threads — keeps the data model flat (channel → thread → messages)
         if (rootMessage.getThreadId() != null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "cannot create a thread from a message that is already inside a thread");
         }
 
-        // one thread per message
         if (threadRepository.existsByRootMessageId(rootMessageOid)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "a thread already exists for this message");
         }
@@ -113,14 +109,11 @@ public class ThreadServiceImpl implements ThreadService {
         boolean isCreator = thread.getCreatedBy().equals(requestingUserId);
         boolean isAdmin = "ADMIN".equalsIgnoreCase(requestingUserRole);
 
-        // creator can delete, admin can delete non-admin threads
         if (!isCreator) {
             if (!isAdmin) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "you can only delete your own threads");
             }
-            // admin-on-admin? nope
-            boolean creatorIsAdmin = "ADMIN".equalsIgnoreCase(thread.getCreatorRole());
-            if (creatorIsAdmin) {
+            if ("ADMIN".equalsIgnoreCase(thread.getCreatorRole())) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admins cannot delete other admins' threads");
             }
         }
@@ -129,7 +122,6 @@ public class ThreadServiceImpl implements ThreadService {
         thread.setUpdatedAt(Instant.now());
         threadRepository.save(thread);
 
-        // async cleanup of thread messages
         threadCleanupService.cleanupThreadMessages(threadOid);
     }
 }

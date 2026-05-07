@@ -15,14 +15,12 @@ public class WebSocketTicketServiceImpl implements WebSocketTicketService {
 
     private final StringRedisTemplate redisTemplate;
 
-    // 60s should be enough to open the connection
     private static final Duration TICKET_TTL = Duration.ofSeconds(60);
     private static final String KEY_PREFIX = "ws-ticket:";
 
     @Override
     public String createTicket(Integer userId, String role) {
         String ticket = UUID.randomUUID().toString();
-        // store as "userId:role" so the handshake can recover both
         String value = userId + ":" + (role != null ? role : "USER");
         redisTemplate.opsForValue().set(KEY_PREFIX + ticket, value, TICKET_TTL);
         return ticket;
@@ -30,17 +28,20 @@ public class WebSocketTicketServiceImpl implements WebSocketTicketService {
 
     @Override
     public Map<String, Object> validateAndConsumeTicket(String ticket) {
-        if (ticket == null) return null;
+        if (ticket == null || ticket.isBlank()) return null;
 
-        String key = KEY_PREFIX + ticket;
-        // get + delete in one shot so it can't be reused
-        String value = redisTemplate.opsForValue().getAndDelete(key);
+        // GETDEL is atomic — guarantees a ticket can't be redeemed twice across racing handshakes
+        String value = redisTemplate.opsForValue().getAndDelete(KEY_PREFIX + ticket);
         if (value == null) return null;
 
-        // value format: "userId:role"
         String[] parts = value.split(":", 2);
-        Integer userId = Integer.parseInt(parts[0]);
-        String role = parts.length > 1 ? parts[1] : "USER";
+        Integer userId;
+        try {
+            userId = Integer.parseInt(parts[0]);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        String role = parts.length > 1 && !parts[1].isBlank() ? parts[1] : "USER";
         return Map.of("userId", userId, "userRole", role);
     }
 }

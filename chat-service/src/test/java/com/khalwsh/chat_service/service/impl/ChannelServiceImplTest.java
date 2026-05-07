@@ -294,6 +294,28 @@ class ChannelServiceImplTest {
 
             assertThat(groupChannel.getMembers()).doesNotContain(20);
             verify(channelRepository).save(groupChannel);
+            verify(channelRepository, never()).delete(any(Channel.class));
+        }
+
+        @Test
+        void shouldDeleteChannelWhenLastMemberLeaves() {
+            // single-member group channel — leaving empties it
+            Channel solo = Channel.builder()
+                    .id(channelId)
+                    .name("solo")
+                    .type(ChannelType.GROUP)
+                    .workspaceId(1)
+                    .members(new ArrayList<>(List.of(10)))
+                    .createdBy(10)
+                    .createdAt(Instant.now())
+                    .updatedAt(Instant.now())
+                    .build();
+            when(channelRepository.findById(channelId)).thenReturn(Optional.of(solo));
+
+            channelService.leaveChannel(channelId.toHexString(), 10);
+
+            verify(channelRepository).delete(solo);
+            verify(channelRepository, never()).save(any(Channel.class));
         }
 
         @Test

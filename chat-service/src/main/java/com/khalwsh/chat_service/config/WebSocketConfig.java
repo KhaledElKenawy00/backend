@@ -18,15 +18,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        // subscribers listen on /topic/channel/{id} and /topic/thread/{id}
-        config.enableSimpleBroker("/topic");
-        // senders hit /app/chat/send and /app/chat/typing
+        // /queue is needed for /user/queue/errors — without it the user destination resolver has nowhere to route
+        config.enableSimpleBroker("/topic", "/queue");
         config.setApplicationDestinationPrefixes("/app");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // connect with ?ticket={ticket}
         registry.addEndpoint("/api/chat/connect")
                 .addInterceptors(handshakeInterceptor)
                 .setAllowedOriginPatterns("*");
@@ -34,7 +32,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        // check channel/thread membership on subscribe
         registration.interceptors(subscriptionInterceptor);
     }
 }

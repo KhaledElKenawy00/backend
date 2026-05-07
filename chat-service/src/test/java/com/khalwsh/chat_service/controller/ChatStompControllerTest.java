@@ -25,6 +25,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -93,8 +94,24 @@ class ChatStompControllerTest {
 
             controller.handleSendMessage(payload, headerAccessor);
 
-            verify(messagingTemplate).convertAndSend(eq("/topic/thread/t1"), any(WebSocketEvent.class));
             verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
+            verify(messagingTemplate).convertAndSend(eq("/topic/thread/t1"), any(WebSocketEvent.class));
+        }
+
+        @Test
+        void shouldOnlyBroadcastToChannelTopicForNonThreadMessage() {
+            StompSendMessage payload = StompSendMessage.builder()
+                    .channelId("ch1")
+                    .content("hi")
+                    .build();
+            MessageResponse saved = MessageResponse.builder()
+                    .id("msg1").channelId("ch1").content("hi").build();
+            when(messageService.sendMessage(eq("ch1"), any(), eq(10), eq("USER"))).thenReturn(saved);
+
+            controller.handleSendMessage(payload, headerAccessor);
+
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
+            verify(messagingTemplate, never()).convertAndSend(startsWith("/topic/thread/"), any(WebSocketEvent.class));
         }
 
         @Test
@@ -359,7 +376,7 @@ class ChatStompControllerTest {
     class SessionAttributes {
 
         @Test
-        void shouldThrowWhenNoUserIdInSession() {
+        void shouldSendErrorWhenNoUserIdInSession() {
             SimpMessageHeaderAccessor badAccessor = SimpMessageHeaderAccessor.create();
             badAccessor.setSessionAttributes(new HashMap<>());
             badAccessor.setSessionId("bad-session");
@@ -367,13 +384,19 @@ class ChatStompControllerTest {
             StompSendMessage payload = StompSendMessage.builder()
                     .channelId("ch1").content("hello").build();
 
-            assertThatThrownBy(() -> controller.handleSendMessage(payload, badAccessor))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("no userId in WebSocket session");
+            controller.handleSendMessage(payload, badAccessor);
+
+            ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(messagingTemplate).convertAndSendToUser(eq("bad-session"), eq("/queue/errors"), captor.capture());
+            @SuppressWarnings("unchecked")
+            Map<String, String> err = (Map<String, String>) captor.getValue().getPayload();
+            assertThat(err.get("code")).isEqualTo("INTERNAL_ERROR");
+            assertThat(err.get("message")).isEqualTo("missing session identity");
+            verifyNoInteractions(messageService);
         }
 
         @Test
-        void shouldThrowWhenNoUserRoleInSession() {
+        void shouldSendErrorWhenNoUserRoleInSession() {
             SimpMessageHeaderAccessor noRoleAccessor = SimpMessageHeaderAccessor.create();
             Map<String, Object> attrs = new HashMap<>();
             attrs.put("userId", 10);
@@ -383,21 +406,65 @@ class ChatStompControllerTest {
             StompSendMessage payload = StompSendMessage.builder()
                     .channelId("ch1").content("hello").build();
 
-            assertThatThrownBy(() -> controller.handleSendMessage(payload, noRoleAccessor))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("no userRole in WebSocket session");
+            controller.handleSendMessage(payload, noRoleAccessor);
+
+            verify(messagingTemplate).convertAndSendToUser(
+                    eq("no-role-session"), eq("/queue/errors"), any(WebSocketEvent.class));
+            verifyNoInteractions(messageService);
         }
 
         @Test
-        void shouldThrowWhenSessionAttributesNull() {
+        void shouldSendErrorWhenSessionAttributesNull() {
             SimpMessageHeaderAccessor nullAttrsAccessor = SimpMessageHeaderAccessor.create();
             nullAttrsAccessor.setSessionAttributes(null);
+            nullAttrsAccessor.setSessionId("null-attrs-session");
 
             StompSendMessage payload = StompSendMessage.builder()
                     .channelId("ch1").content("hello").build();
 
-            assertThatThrownBy(() -> controller.handleSendMessage(payload, nullAttrsAccessor))
-                    .isInstanceOf(IllegalStateException.class);
+            controller.handleSendMessage(payload, nullAttrsAccessor);
+
+            verify(messagingTemplate).convertAndSendToUser(
+                    eq("null-attrs-session"), eq("/queue/errors"), any(WebSocketEvent.class));
+            verifyNoInteractions(messageService);
+        }
+
+        @Test
+        void typingShouldSilentlyDropWhenNoUserId() {
+            SimpMessageHeaderAccessor badAccessor = SimpMessageHeaderAccessor.create();
+            badAccessor.setSessionAttributes(new HashMap<>());
+            badAccessor.setSessionId("bad-session");
+
+            StompTypingEvent payload = StompTypingEvent.builder()
+                    .channelId("ch1").typing(true).build();
+
+            controller.handleTyping(payload, badAccessor);
+
+            verifyNoInteractions(messagingTemplate);
+        }
+    }
+
+    // ────────────────────────────────────────
+    // STOMP send catches IllegalArgumentException as INVALID_PAYLOAD
+    // ────────────────────────────────────────
+
+    @Nested
+    class IllegalArgumentMapping {
+
+        @Test
+        void shouldMapBadObjectIdToInvalidPayload() {
+            StompSendMessage payload = StompSendMessage.builder()
+                    .channelId("not-a-hex").content("hi").build();
+            when(messageService.sendMessage(any(), any(), any(), any()))
+                    .thenThrow(new IllegalArgumentException("invalid hexadecimal representation"));
+
+            controller.handleSendMessage(payload, headerAccessor);
+
+            ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(messagingTemplate).convertAndSendToUser(eq("session-123"), eq("/queue/errors"), captor.capture());
+            @SuppressWarnings("unchecked")
+            Map<String, String> err = (Map<String, String>) captor.getValue().getPayload();
+            assertThat(err.get("code")).isEqualTo("INVALID_PAYLOAD");
         }
     }
 }

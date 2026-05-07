@@ -12,6 +12,5 @@ public interface ThreadService {
 
     ThreadResponse getThread(String threadId);
 
-    // soft delete + async cleanup of messages
     void deleteThread(String threadId, Integer requestingUserId, String requestingUserRole);
 }

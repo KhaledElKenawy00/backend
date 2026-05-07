@@ -1,16 +1,25 @@
 package com.khalwsh.chat_service.config;
 
+import com.mongodb.MongoCommandException;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.bson.BsonType;
+import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.config.EnableMongoAuditing;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
-// indexes that need partialFilterExpression can't be done with @CompoundIndex
-// because Spring writes null explicitly and mongo sparse only skips *missing* fields
+// declares the partial-unique indexes that Spring's @CompoundIndex can't express:
+// `sparse: true` still indexes documents whose field is present-but-null, but Spring
+// always writes nulls, so we filter on `$type` to exclude both missing and null values.
+// (`$ne: null` would be more natural but isn't on MongoDB's partialFilterExpression allow-list.)
+@Slf4j
 @Configuration
 @EnableMongoAuditing
 @RequiredArgsConstructor
@@ -22,13 +31,12 @@ public class MongoConfig {
     void ensureIndexes() {
         ensureIdempotencyIndex();
         ensureChannelNameUniqueness();
+        ensureDmKeyUniqueness();
     }
 
-    // idempotency: (senderId, clientMessageId) must be unique,
-    // but only when clientMessageId is actually set
     private void ensureIdempotencyIndex() {
-        var messages = mongoTemplate.getCollection("messages");
-        messages.createIndex(
+        createOrReplaceIndex(
+                mongoTemplate.getCollection("messages"),
                 Indexes.compoundIndex(
                         Indexes.ascending("senderId"),
                         Indexes.ascending("clientMessageId")
@@ -36,20 +44,13 @@ public class MongoConfig {
                 new IndexOptions()
                         .name("idx_sender_clientMsgId")
                         .unique(true)
-                        .partialFilterExpression(
-                                Filters.and(
-                                        Filters.exists("clientMessageId"),
-                                        Filters.ne("clientMessageId", null)
-                                )
-                        )
+                        .partialFilterExpression(Filters.type("clientMessageId", BsonType.STRING))
         );
     }
 
-    // channel names should be unique within a workspace.
-    // DMs have workspaceId=null so they're excluded from this constraint.
     private void ensureChannelNameUniqueness() {
-        var channels = mongoTemplate.getCollection("channels");
-        channels.createIndex(
+        createOrReplaceIndex(
+                mongoTemplate.getCollection("channels"),
                 Indexes.compoundIndex(
                         Indexes.ascending("workspaceId"),
                         Indexes.ascending("name")
@@ -57,12 +58,36 @@ public class MongoConfig {
                 new IndexOptions()
                         .name("idx_workspace_name")
                         .unique(true)
-                        .partialFilterExpression(
-                                Filters.and(
-                                        Filters.exists("workspaceId"),
-                                        Filters.ne("workspaceId", null)
-                                )
-                        )
+                        .partialFilterExpression(Filters.type("workspaceId", BsonType.INT32))
         );
+    }
+
+    private void ensureDmKeyUniqueness() {
+        createOrReplaceIndex(
+                mongoTemplate.getCollection("channels"),
+                Indexes.ascending("dmKey"),
+                new IndexOptions()
+                        .name("idx_dmKey")
+                        .unique(true)
+                        .partialFilterExpression(Filters.type("dmKey", BsonType.STRING))
+        );
+    }
+
+    // makes index setup idempotent across spec changes — earlier versions of these indexes
+    // (e.g. `partialFilterExpression: { $exists: true }`) live on in older data volumes and
+    // would otherwise block startup with IndexOptionsConflict / IndexKeySpecsConflict
+    private void createOrReplaceIndex(MongoCollection<Document> coll, Bson keys, IndexOptions options) {
+        try {
+            coll.createIndex(keys, options);
+        } catch (MongoCommandException e) {
+            int code = e.getErrorCode();
+            if (code == 85 || code == 86) {
+                log.info("dropping stale index {} on {} ({})", options.getName(), coll.getNamespace(), e.getErrorCodeName());
+                coll.dropIndex(options.getName());
+                coll.createIndex(keys, options);
+            } else {
+                throw e;
+            }
+        }
     }
 }

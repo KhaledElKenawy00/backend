@@ -1,20 +1,21 @@
 package com.khalwsh.chat_service.config;
 
+import com.khalwsh.chat_service.dto.response.WebSocketEvent;
 import com.khalwsh.chat_service.model.Channel;
 import com.khalwsh.chat_service.model.ChannelType;
 import com.khalwsh.chat_service.model.ChatThread;
 import com.khalwsh.chat_service.repository.ChannelRepository;
 import com.khalwsh.chat_service.repository.ThreadRepository;
 import org.bson.types.ObjectId;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
@@ -25,7 +26,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,12 +40,22 @@ class WebSocketSubscriptionInterceptorTest {
     private ThreadRepository threadRepository;
 
     @Mock
+    private SimpMessagingTemplate messagingTemplate;
+
+    @Mock
     private MessageChannel messageChannel;
 
-    @InjectMocks
     private WebSocketSubscriptionInterceptor interceptor;
 
+    private void setup() {
+        interceptor = new WebSocketSubscriptionInterceptor(channelRepository, threadRepository, messagingTemplate);
+    }
+
     private Message<?> buildSubscribeMessage(String destination, Integer userId) {
+        return buildSubscribeMessage(destination, userId, "session-1");
+    }
+
+    private Message<?> buildSubscribeMessage(String destination, Integer userId, String sessionId) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         accessor.setDestination(destination);
         if (userId != null) {
@@ -51,6 +63,7 @@ class WebSocketSubscriptionInterceptorTest {
             sessionAttrs.put("userId", userId);
             accessor.setSessionAttributes(sessionAttrs);
         }
+        accessor.setSessionId(sessionId);
         accessor.setSubscriptionId("sub-1");
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
@@ -64,6 +77,17 @@ class WebSocketSubscriptionInterceptorTest {
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 
+    private void assertErrorEnvelope(String expectedCode, String expectedSession) {
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(messagingTemplate).convertAndSendToUser(eq(expectedSession), eq("/queue/errors"), captor.capture());
+        WebSocketEvent<?> event = captor.getValue();
+        assertThat(event.getAction()).isEqualTo("ERROR");
+        @SuppressWarnings("unchecked")
+        Map<String, String> payload = (Map<String, String>) event.getPayload();
+        assertThat(payload.get("code")).isEqualTo(expectedCode);
+        assertThat(payload.get("message")).isNotBlank();
+    }
+
     // ────────────────────────────────────────
     // pass-through for non-SUBSCRIBE frames
     // ────────────────────────────────────────
@@ -73,6 +97,7 @@ class WebSocketSubscriptionInterceptorTest {
 
         @Test
         void shouldPassThroughNonSubscribeMessages() {
+            setup();
             Message<?> msg = buildNonSubscribeMessage();
 
             Message<?> result = interceptor.preSend(msg, messageChannel);
@@ -80,10 +105,12 @@ class WebSocketSubscriptionInterceptorTest {
             assertThat(result).isNotNull();
             verifyNoInteractions(channelRepository);
             verifyNoInteractions(threadRepository);
+            verifyNoInteractions(messagingTemplate);
         }
 
         @Test
         void shouldPassThroughWhenDestinationIsNull() {
+            setup();
             StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
             accessor.setDestination(null);
             Map<String, Object> sessionAttrs = new HashMap<>();
@@ -95,16 +122,19 @@ class WebSocketSubscriptionInterceptorTest {
             Message<?> result = interceptor.preSend(msg, messageChannel);
 
             assertThat(result).isNotNull();
+            verifyNoInteractions(messagingTemplate);
         }
 
         @Test
         void shouldPassThroughForUnrelatedDestinations() {
+            setup();
             Message<?> msg = buildSubscribeMessage("/user/queue/errors", 10);
 
             Message<?> result = interceptor.preSend(msg, messageChannel);
 
             assertThat(result).isNotNull();
             verifyNoInteractions(channelRepository);
+            verifyNoInteractions(messagingTemplate);
         }
     }
 
@@ -117,6 +147,7 @@ class WebSocketSubscriptionInterceptorTest {
 
         @Test
         void shouldAllowMemberToSubscribe() {
+            setup();
             ObjectId channelId = new ObjectId();
             Channel channel = Channel.builder()
                     .id(channelId)
@@ -129,10 +160,12 @@ class WebSocketSubscriptionInterceptorTest {
             Message<?> result = interceptor.preSend(msg, messageChannel);
 
             assertThat(result).isNotNull();
+            verifyNoInteractions(messagingTemplate);
         }
 
         @Test
         void shouldAllowMemberToSubscribeToTyping() {
+            setup();
             ObjectId channelId = new ObjectId();
             Channel channel = Channel.builder()
                     .id(channelId)
@@ -145,10 +178,12 @@ class WebSocketSubscriptionInterceptorTest {
             Message<?> result = interceptor.preSend(msg, messageChannel);
 
             assertThat(result).isNotNull();
+            verifyNoInteractions(messagingTemplate);
         }
 
         @Test
-        void shouldRejectNonMember() {
+        void shouldRejectNonMemberWithErrorEnvelope() {
+            setup();
             ObjectId channelId = new ObjectId();
             Channel channel = Channel.builder()
                     .id(channelId)
@@ -157,37 +192,66 @@ class WebSocketSubscriptionInterceptorTest {
                     .build();
             when(channelRepository.findById(channelId)).thenReturn(Optional.of(channel));
 
-            Message<?> msg = buildSubscribeMessage("/topic/channel/" + channelId.toHexString(), 10);
+            Message<?> msg = buildSubscribeMessage("/topic/channel/" + channelId.toHexString(), 10, "sess-A");
+            Message<?> result = interceptor.preSend(msg, messageChannel);
 
-            assertThatThrownBy(() -> interceptor.preSend(msg, messageChannel))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("not a member of channel");
+            // SUBSCRIBE is dropped, error sent to /user/queue/errors
+            assertThat(result).isNull();
+            assertErrorEnvelope("NOT_A_MEMBER", "sess-A");
         }
 
         @Test
-        void shouldRejectIfChannelNotFound() {
+        void shouldRejectMissingChannelWithErrorEnvelope() {
+            setup();
             ObjectId channelId = new ObjectId();
             when(channelRepository.findById(channelId)).thenReturn(Optional.empty());
 
-            Message<?> msg = buildSubscribeMessage("/topic/channel/" + channelId.toHexString(), 10);
+            Message<?> msg = buildSubscribeMessage("/topic/channel/" + channelId.toHexString(), 10, "sess-B");
+            Message<?> result = interceptor.preSend(msg, messageChannel);
 
-            assertThatThrownBy(() -> interceptor.preSend(msg, messageChannel))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("channel not found");
+            assertThat(result).isNull();
+            assertErrorEnvelope("CHANNEL_NOT_FOUND", "sess-B");
         }
 
         @Test
-        void shouldThrowWhenNoUserIdInSession() {
+        void shouldRejectMalformedIdWithInvalidPayload() {
+            setup();
+
+            Message<?> msg = buildSubscribeMessage("/topic/channel/not-a-hex", 10, "sess-C");
+            Message<?> result = interceptor.preSend(msg, messageChannel);
+
+            assertThat(result).isNull();
+            assertErrorEnvelope("INVALID_PAYLOAD", "sess-C");
+            verifyNoInteractions(channelRepository);
+        }
+
+        @Test
+        void shouldRejectEmptyIdSegmentWithInvalidPayload() {
+            setup();
+
+            Message<?> msg = buildSubscribeMessage("/topic/channel/", 10, "sess-D");
+            Message<?> result = interceptor.preSend(msg, messageChannel);
+
+            assertThat(result).isNull();
+            assertErrorEnvelope("INVALID_PAYLOAD", "sess-D");
+        }
+
+        @Test
+        void shouldDropMessageSilentlyWhenSessionHasNoUserId() {
+            setup();
             ObjectId channelId = new ObjectId();
             StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
             accessor.setDestination("/topic/channel/" + channelId.toHexString());
             accessor.setSessionAttributes(null);
+            accessor.setSessionId("sess-X");
             accessor.setSubscriptionId("sub-1");
             Message<?> msg = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
 
-            assertThatThrownBy(() -> interceptor.preSend(msg, messageChannel))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("no userId in WebSocket session");
+            Message<?> result = interceptor.preSend(msg, messageChannel);
+
+            // no userId means we can't address /user — drop silently, no error sent
+            assertThat(result).isNull();
+            verifyNoInteractions(messagingTemplate);
         }
     }
 
@@ -200,6 +264,7 @@ class WebSocketSubscriptionInterceptorTest {
 
         @Test
         void shouldAllowMemberToSubscribeToThread() {
+            setup();
             ObjectId threadId = new ObjectId();
             ObjectId channelId = new ObjectId();
             ChatThread thread = ChatThread.builder()
@@ -218,10 +283,12 @@ class WebSocketSubscriptionInterceptorTest {
             Message<?> result = interceptor.preSend(msg, messageChannel);
 
             assertThat(result).isNotNull();
+            verifyNoInteractions(messagingTemplate);
         }
 
         @Test
         void shouldAllowMemberToSubscribeToThreadTyping() {
+            setup();
             ObjectId threadId = new ObjectId();
             ObjectId channelId = new ObjectId();
             ChatThread thread = ChatThread.builder()
@@ -240,22 +307,25 @@ class WebSocketSubscriptionInterceptorTest {
             Message<?> result = interceptor.preSend(msg, messageChannel);
 
             assertThat(result).isNotNull();
+            verifyNoInteractions(messagingTemplate);
         }
 
         @Test
-        void shouldRejectIfThreadNotFound() {
+        void shouldRejectMissingThreadWithErrorEnvelope() {
+            setup();
             ObjectId threadId = new ObjectId();
             when(threadRepository.findActiveById(threadId)).thenReturn(Optional.empty());
 
-            Message<?> msg = buildSubscribeMessage("/topic/thread/" + threadId.toHexString(), 10);
+            Message<?> msg = buildSubscribeMessage("/topic/thread/" + threadId.toHexString(), 10, "sess-T1");
+            Message<?> result = interceptor.preSend(msg, messageChannel);
 
-            assertThatThrownBy(() -> interceptor.preSend(msg, messageChannel))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("thread not found");
+            assertThat(result).isNull();
+            assertErrorEnvelope("CHANNEL_NOT_FOUND", "sess-T1");
         }
 
         @Test
-        void shouldRejectIfNotMemberOfParentChannel() {
+        void shouldRejectNonMemberOfParentChannelWithErrorEnvelope() {
+            setup();
             ObjectId threadId = new ObjectId();
             ObjectId channelId = new ObjectId();
             ChatThread thread = ChatThread.builder()
@@ -270,11 +340,23 @@ class WebSocketSubscriptionInterceptorTest {
             when(threadRepository.findActiveById(threadId)).thenReturn(Optional.of(thread));
             when(channelRepository.findById(channelId)).thenReturn(Optional.of(channel));
 
-            Message<?> msg = buildSubscribeMessage("/topic/thread/" + threadId.toHexString(), 10);
+            Message<?> msg = buildSubscribeMessage("/topic/thread/" + threadId.toHexString(), 10, "sess-T2");
+            Message<?> result = interceptor.preSend(msg, messageChannel);
 
-            assertThatThrownBy(() -> interceptor.preSend(msg, messageChannel))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("not a member of channel");
+            assertThat(result).isNull();
+            assertErrorEnvelope("NOT_A_MEMBER", "sess-T2");
+        }
+
+        @Test
+        void shouldRejectMalformedThreadId() {
+            setup();
+
+            Message<?> msg = buildSubscribeMessage("/topic/thread/garbage", 10, "sess-T3");
+            Message<?> result = interceptor.preSend(msg, messageChannel);
+
+            assertThat(result).isNull();
+            assertErrorEnvelope("INVALID_PAYLOAD", "sess-T3");
+            verifyNoInteractions(threadRepository);
         }
     }
 }

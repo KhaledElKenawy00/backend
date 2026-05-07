@@ -24,6 +24,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,7 +57,7 @@ class MessageControllerTest {
     class SendMessage {
 
         @Test
-        void shouldReturn201() {
+        void shouldReturn201AndBroadcastToChannelTopic() {
             HttpServletRequest httpRequest = mockRequest("10", "USER");
             SendMessageRequest req = SendMessageRequest.builder().content("hello").build();
             MessageResponse expected = MessageResponse.builder().id("msg1").channelId("ch1").build();
@@ -66,6 +67,38 @@ class MessageControllerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
             assertThat(response.getBody()).isEqualTo(expected);
+            // REST send must broadcast NEW_MESSAGE so WS subscribers see it
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
+            verify(messagingTemplate, never()).convertAndSend(startsWith("/topic/thread/"), any(WebSocketEvent.class));
+        }
+
+        @Test
+        void shouldBroadcastToBothTopicsWhenInThread() {
+            HttpServletRequest httpRequest = mockRequest("10", "USER");
+            SendMessageRequest req = SendMessageRequest.builder().content("threaded").threadId("t1").build();
+            MessageResponse saved = MessageResponse.builder()
+                    .id("msg1").channelId("ch1").threadId("t1").content("threaded").build();
+            when(messageService.sendMessage(eq("ch1"), any(), eq(10), eq("USER"))).thenReturn(saved);
+
+            controller.sendMessage("ch1", req, httpRequest);
+
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
+            verify(messagingTemplate).convertAndSend(eq("/topic/thread/t1"), any(WebSocketEvent.class));
+        }
+
+        @Test
+        void shouldBroadcastEventActionAsNewMessage() {
+            HttpServletRequest httpRequest = mockRequest("10", "USER");
+            SendMessageRequest req = SendMessageRequest.builder().content("hi").build();
+            MessageResponse saved = MessageResponse.builder().id("msg1").channelId("ch1").build();
+            when(messageService.sendMessage(eq("ch1"), any(), eq(10), eq("USER"))).thenReturn(saved);
+
+            controller.sendMessage("ch1", req, httpRequest);
+
+            org.mockito.ArgumentCaptor<WebSocketEvent> captor = org.mockito.ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), captor.capture());
+            assertThat(captor.getValue().getAction()).isEqualTo("NEW_MESSAGE");
+            assertThat(captor.getValue().getPayload()).isEqualTo(saved);
         }
     }
 
@@ -148,7 +181,7 @@ class MessageControllerTest {
     class EditMessage {
 
         @Test
-        void shouldEditAndBroadcastToChannel() {
+        void shouldEditAndBroadcastToChannelOnly() {
             HttpServletRequest httpRequest = mockRequest("10", "USER");
             EditMessageRequest req = new EditMessageRequest();
             req.setContent("edited");
@@ -160,10 +193,11 @@ class MessageControllerTest {
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
+            verify(messagingTemplate, never()).convertAndSend(startsWith("/topic/thread/"), any(WebSocketEvent.class));
         }
 
         @Test
-        void shouldBroadcastToThreadTopicWhenInThread() {
+        void shouldBroadcastToBothTopicsWhenInThread() {
             HttpServletRequest httpRequest = mockRequest("10", "USER");
             EditMessageRequest req = new EditMessageRequest();
             req.setContent("edited in thread");
@@ -173,6 +207,7 @@ class MessageControllerTest {
 
             controller.editMessage("msg1", req, httpRequest);
 
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
             verify(messagingTemplate).convertAndSend(eq("/topic/thread/t1"), any(WebSocketEvent.class));
         }
     }
@@ -185,7 +220,7 @@ class MessageControllerTest {
     class DeleteMessage {
 
         @Test
-        void shouldDeleteAndBroadcastToChannel() {
+        void shouldDeleteAndBroadcastToChannelOnly() {
             HttpServletRequest httpRequest = mockRequest("10", "USER");
             MessageResponse deleted = MessageResponse.builder()
                     .id("msg1").channelId("ch1").threadId(null).deleted(true).build();
@@ -194,11 +229,13 @@ class MessageControllerTest {
             ResponseEntity<Void> response = controller.deleteMessage("msg1", httpRequest);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isNull();
             verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
+            verify(messagingTemplate, never()).convertAndSend(startsWith("/topic/thread/"), any(WebSocketEvent.class));
         }
 
         @Test
-        void shouldBroadcastToThreadTopicWhenInThread() {
+        void shouldBroadcastToBothTopicsWhenInThread() {
             HttpServletRequest httpRequest = mockRequest("10", "USER");
             MessageResponse deleted = MessageResponse.builder()
                     .id("msg1").channelId("ch1").threadId("t1").deleted(true).build();
@@ -206,7 +243,25 @@ class MessageControllerTest {
 
             controller.deleteMessage("msg1", httpRequest);
 
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
             verify(messagingTemplate).convertAndSend(eq("/topic/thread/t1"), any(WebSocketEvent.class));
+        }
+
+        @Test
+        void shouldEmitMessageIdInDeletePayload() {
+            HttpServletRequest httpRequest = mockRequest("10", "USER");
+            MessageResponse deleted = MessageResponse.builder()
+                    .id("msg1").channelId("ch1").threadId(null).deleted(true).build();
+            when(messageService.deleteMessage("msg1", 10, "USER")).thenReturn(deleted);
+
+            controller.deleteMessage("msg1", httpRequest);
+
+            org.mockito.ArgumentCaptor<WebSocketEvent> captor = org.mockito.ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), captor.capture());
+            assertThat(captor.getValue().getAction()).isEqualTo("DELETE_MESSAGE");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> payload = (java.util.Map<String, String>) captor.getValue().getPayload();
+            assertThat(payload).containsEntry("messageId", "msg1");
         }
 
         @Test

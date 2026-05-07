@@ -1,7 +1,6 @@
 package com.khalwsh.chat_service.controller;
 
 import com.khalwsh.chat_service.dto.request.CreateThreadRequest;
-import com.khalwsh.chat_service.dto.response.MessageResponse;
 import com.khalwsh.chat_service.dto.response.PaginatedResponse;
 import com.khalwsh.chat_service.dto.response.ThreadResponse;
 import com.khalwsh.chat_service.dto.response.WebSocketEvent;
@@ -20,7 +19,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -54,13 +52,11 @@ public class ThreadController {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
 
-        // must be a channel member to list its threads
         if (!channelService.isMember(id, user.getUserId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of this channel");
         }
 
-        PaginatedResponse<ThreadResponse> response = threadService.getChannelThreads(id, page, limit);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(threadService.getChannelThreads(id, page, limit));
     }
 
     @GetMapping("/threads/{threadId}")
@@ -69,13 +65,10 @@ public class ThreadController {
             HttpServletRequest httpRequest) {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
-
-        // check membership via the thread's parent channel
         ThreadResponse thread = threadService.getThread(threadId);
         if (!channelService.isMember(thread.getChannelId(), user.getUserId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of the parent channel");
         }
-
         return ResponseEntity.ok(thread);
     }
 
@@ -86,11 +79,14 @@ public class ThreadController {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
 
+        // capture channelId before delete so we can address the channel topic
+        String channelId = threadService.getThread(threadId).getChannelId();
         threadService.deleteThread(threadId, user.getUserId(), user.getRole());
 
-        // broadcast thread deleted to channel subscribers
         WebSocketEvent<Map<String, String>> event = WebSocketEvent.of(
-                WebSocketEvent.THREAD_DELETED, Map.of("threadId", threadId));
+                WebSocketEvent.THREAD_DELETED,
+                Map.of("threadId", threadId, "channelId", channelId));
+        messagingTemplate.convertAndSend("/topic/channel/" + channelId, event);
         messagingTemplate.convertAndSend("/topic/thread/" + threadId, event);
 
         return ResponseEntity.ok().build();
@@ -106,24 +102,17 @@ public class ThreadController {
             HttpServletRequest httpRequest) {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
-
-        // check membership via the thread's parent channel
         ThreadResponse thread = threadService.getThread(threadId);
         if (!channelService.isMember(thread.getChannelId(), user.getUserId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of the parent channel");
         }
 
         if (before != null) {
-            List<MessageResponse> messages = messageService.getThreadMessagesBefore(threadId, before, limit);
-            return ResponseEntity.ok(messages);
+            return ResponseEntity.ok(messageService.getThreadMessagesBefore(threadId, before, limit));
         }
-
         if (after != null) {
-            List<MessageResponse> messages = messageService.getThreadMessagesAfter(threadId, after, limit);
-            return ResponseEntity.ok(messages);
+            return ResponseEntity.ok(messageService.getThreadMessagesAfter(threadId, after, limit));
         }
-
-        PaginatedResponse<MessageResponse> response = messageService.getThreadMessages(threadId, page, limit);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(messageService.getThreadMessages(threadId, page, limit));
     }
 }

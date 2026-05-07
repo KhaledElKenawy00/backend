@@ -17,14 +17,10 @@ public class SendMessageRequest {
     @NotBlank(message = "content is required")
     private String content;
 
-    // if set, message goes into this thread instead of the main channel feed
     private String threadId;
-
-    // if set, this message is an inline reply to another message
     private String replyToId;
-
     private List<Integer> mentions;
 
-    // optional client-generated UUID for idempotent sends
+    // client-generated UUID — repeat sends with the same id are deduplicated server-side
     private String clientMessageId;
 }

@@ -61,13 +61,10 @@ public class ChannelController {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
 
-        // must be a member to view channel details
         if (!channelService.isMember(id, user.getUserId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of this channel");
         }
-
-        ChannelResponse response = channelService.getChannel(id);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(channelService.getChannel(id));
     }
 
     @PostMapping("/channels/{id}/join")

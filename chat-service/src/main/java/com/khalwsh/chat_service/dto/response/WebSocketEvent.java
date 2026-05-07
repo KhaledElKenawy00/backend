@@ -15,7 +15,6 @@ public class WebSocketEvent<T> {
     private String action;
     private T payload;
 
-    // action constants
     public static final String NEW_MESSAGE = "NEW_MESSAGE";
     public static final String EDIT_MESSAGE = "EDIT_MESSAGE";
     public static final String DELETE_MESSAGE = "DELETE_MESSAGE";

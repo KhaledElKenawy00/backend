@@ -6,8 +6,7 @@ import lombok.Getter;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
-// reads user identity from nginx-forwarded headers
-// nginx already validated the JWT so we just trust these
+// the JWT is validated by Nginx upstream, so the X-User-* headers can be trusted as-is
 public class UserContext {
 
     private static final String HEADER_USER_ID = "X-User-Id";
@@ -28,7 +27,6 @@ public class UserContext {
         public boolean isUser() { return USER.equalsIgnoreCase(role);}
     }
 
-    // grab userId and role from headers, validate them
     public static UserInfo fromRequest(HttpServletRequest request) {
         String userIdHeader = request.getHeader(HEADER_USER_ID);
         String role = request.getHeader(HEADER_USER_ROLE);
