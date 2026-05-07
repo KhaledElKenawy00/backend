@@ -31,12 +31,10 @@ public class ChannelServiceImpl implements ChannelService {
 
     @Override
     public ChannelResponse createGroupChannel(CreateChannelRequest request, Integer creatorUserId) {
-        // GROUP needs a workspaceId
         if (request.getWorkspaceId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId is required for group channels");
         }
 
-        // auto-include the creator
         List<Integer> members = new ArrayList<>(request.getMembers());
         if (!members.contains(creatorUserId)) {
             members.add(creatorUserId);
@@ -60,7 +58,7 @@ public class ChannelServiceImpl implements ChannelService {
 
     @Override
     public PaginatedResponse<ChannelResponse> getWorkspaceChannels(Integer workspaceId, Integer userId, int page, int limit) {
-        // client sends 1-based pages, Spring uses 0-based
+        // API is 1-based, Spring's PageRequest is 0-based
         PageRequest pageRequest = PageRequest.of(page - 1, limit, Sort.by(Sort.Direction.ASC, "name"));
 
         Page<Channel> channelPage = channelRepository.findWorkspaceChannelsForUser(workspaceId, userId, pageRequest);
@@ -92,12 +90,10 @@ public class ChannelServiceImpl implements ChannelService {
         Channel channel = channelRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "channel not found"));
 
-        // can only join GROUP channels, not DMs
         if (channel.getType() != ChannelType.GROUP) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "cannot join a direct message channel");
         }
 
-        // already in? skip
         if (channel.getMembers().contains(userId)) {
             return;
         }
@@ -122,6 +118,13 @@ public class ChannelServiceImpl implements ChannelService {
         }
 
         channel.getMembers().remove(Integer.valueOf(userId));
+
+        // last member out — delete so the (workspaceId, name) slot is freed up for re-use
+        if (channel.getMembers().isEmpty()) {
+            channelRepository.delete(channel);
+            return;
+        }
+
         channel.setUpdatedAt(Instant.now());
         channelRepository.save(channel);
     }
@@ -132,18 +135,15 @@ public class ChannelServiceImpl implements ChannelService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "cannot create a DM with yourself");
         }
 
-        // smaller id first so 5_42 == 42_5
+        // canonical key — smaller id first so the lookup is order-independent
         String dmKey = Math.min(currentUserId, targetUserId) + "_" + Math.max(currentUserId, targetUserId);
 
-        // already exists? return it
         Optional<Channel> existing = channelRepository.findByDmKey(dmKey);
         if (existing.isPresent()) {
             return DtoMapper.toChannelResponse(existing.get());
         }
 
-        // DMs have exactly 2 members and no workspace
         Instant now = Instant.now();
-
         Channel dm = Channel.builder()
                 .type(ChannelType.DIRECT)
                 .workspaceId(null)
@@ -155,10 +155,9 @@ public class ChannelServiceImpl implements ChannelService {
                 .build();
 
         try {
-            Channel saved = channelRepository.save(dm);
-            return DtoMapper.toChannelResponse(saved);
+            return DtoMapper.toChannelResponse(channelRepository.save(dm));
         } catch (DuplicateKeyException e) {
-            // race: someone else created it first, just fetch theirs
+            // concurrent create lost the race — re-fetch the winner
             return channelRepository.findByDmKey(dmKey)
                     .map(DtoMapper::toChannelResponse)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "DM creation failed unexpectedly"));

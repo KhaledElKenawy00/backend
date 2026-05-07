@@ -41,6 +41,12 @@ public interface MessageRepository extends MongoRepository<Message, ObjectId> {
     @Query(value = "{ 'threadId': ?0, '_id': { $gt: ?1 } }", count = true)
     long countThreadMessagesAfter(ObjectId threadId, ObjectId afterMessageId);
 
+    @Query(value = "{ 'channelId': ?0, 'threadId': null }", count = true)
+    long countChannelMessages(ObjectId channelId);
+
+    @Query(value = "{ 'threadId': ?0 }", count = true)
+    long countThreadMessages(ObjectId threadId);
+
     @Query("{ 'threadId': ?0 }")
     List<Message> findAllByThreadId(ObjectId threadId);
 }

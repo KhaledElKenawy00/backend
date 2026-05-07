@@ -31,27 +31,25 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     public MessageResponse sendMessage(String channelId, SendMessageRequest request, Integer senderId, String senderRole) {
-        // must be a member
         if (!channelService.isMember(channelId, senderId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "you are not a member of this channel");
         }
 
-        // duplicate check: if client sent a clientMessageId, return the existing msg
-        if (request.getClientMessageId() != null) {
-            Optional<Message> existing = messageRepository.findBySenderIdAndClientMessageId(
-                    senderId, request.getClientMessageId());
+        // normalize blank to null up-front: avoids two empty-string retries dedup-matching each other,
+        // and keeps blanks out of the partial unique index
+        String clientMsgId = request.getClientMessageId();
+        if (clientMsgId != null && clientMsgId.isBlank()) {
+            clientMsgId = null;
+        }
+
+        if (clientMsgId != null) {
+            Optional<Message> existing = messageRepository.findBySenderIdAndClientMessageId(senderId, clientMsgId);
             if (existing.isPresent()) {
                 return DtoMapper.toMessageResponse(existing.get());
             }
         }
 
         Instant now = Instant.now();
-
-        // blank clientMessageId treated as absent so the partial unique index ignores it
-        String clientMsgId = request.getClientMessageId();
-        if (clientMsgId != null && clientMsgId.isBlank()) {
-            clientMsgId = null;
-        }
 
         Message message = Message.builder()
                 .channelId(new ObjectId(channelId))
@@ -71,8 +69,6 @@ public class MessageServiceImpl implements MessageService {
         Message saved = messageRepository.save(message);
         return DtoMapper.toMessageResponse(saved);
     }
-
-    // --- channel messages ---
 
     @Override
     public PaginatedResponse<MessageResponse> getChannelMessages(String channelId, int page, int limit) {
@@ -113,8 +109,6 @@ public class MessageServiceImpl implements MessageService {
                 .toList();
     }
 
-    // --- thread messages ---
-
     @Override
     public PaginatedResponse<MessageResponse> getThreadMessages(String threadId, int page, int limit) {
         PageRequest pageRequest = PageRequest.of(page - 1, limit, Sort.by(Sort.Direction.DESC, "createdAt", "_id"));
@@ -154,8 +148,6 @@ public class MessageServiceImpl implements MessageService {
                 .toList();
     }
 
-    // --- edit ---
-
     @Override
     public MessageResponse editMessage(String messageId, String newContent, Integer requestingUserId, String requestingUserRole) {
         ObjectId msgId = new ObjectId(messageId);
@@ -166,7 +158,6 @@ public class MessageServiceImpl implements MessageService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "cannot edit a deleted message");
         }
 
-        // only the sender can edit; admins can't edit others'
         if (!message.getSenderId().equals(requestingUserId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "you can only edit your own messages");
         }
@@ -174,11 +165,8 @@ public class MessageServiceImpl implements MessageService {
         message.setContent(newContent);
         message.setUpdatedAt(Instant.now());
 
-        Message saved = messageRepository.save(message);
-        return DtoMapper.toMessageResponse(saved);
+        return DtoMapper.toMessageResponse(messageRepository.save(message));
     }
-
-    // --- soft delete ---
 
     @Override
     public MessageResponse deleteMessage(String messageId, Integer requestingUserId, String requestingUserRole) {
@@ -186,21 +174,19 @@ public class MessageServiceImpl implements MessageService {
         Message message = messageRepository.findById(msgId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "message not found"));
 
+        // null tells the controller "already deleted, don't broadcast"
         if (message.getDeleted()) {
-            return null; // already deleted, nothing to do
+            return null;
         }
 
         boolean isOwner = message.getSenderId().equals(requestingUserId);
         boolean isAdmin = "ADMIN".equalsIgnoreCase(requestingUserRole);
 
-        // owner can delete their own, admins can delete non-admin msgs
         if (!isOwner) {
             if (!isAdmin) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "you can only delete your own messages");
             }
-            // admin-on-admin? nope
-            boolean senderIsAdmin = "ADMIN".equalsIgnoreCase(message.getSenderRole());
-            if (senderIsAdmin) {
+            if ("ADMIN".equalsIgnoreCase(message.getSenderRole())) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admins cannot delete other admins' messages");
             }
         }
@@ -210,11 +196,9 @@ public class MessageServiceImpl implements MessageService {
         message.setDeletedAt(Instant.now());
         message.setUpdatedAt(Instant.now());
 
-        Message saved = messageRepository.save(message);
-        return DtoMapper.toMessageResponse(saved);
+        return DtoMapper.toMessageResponse(messageRepository.save(message));
     }
 
-    // string -> ObjectId, null-safe
     private ObjectId toObjectId(String hexString) {
         return hexString != null ? new ObjectId(hexString) : null;
     }

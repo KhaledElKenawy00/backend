@@ -5,7 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-// broadcast to /topic/channel/{id} or /topic/thread/{id} when someone is typing
 @Data
 @Builder
 @NoArgsConstructor

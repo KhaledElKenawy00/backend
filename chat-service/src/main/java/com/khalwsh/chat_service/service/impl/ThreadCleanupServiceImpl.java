@@ -44,7 +44,7 @@ public class ThreadCleanupServiceImpl implements ThreadCleanupService {
                 log.info("cleaned up {} messages for deleted thread {}", deletedCount, threadId.toHexString());
             }
         } catch (Exception e) {
-            // cleanup failing is fine, the thread itself is already marked deleted
+            // swallow — the thread itself is already marked deleted, so the messages are unreachable
             log.error("failed to clean up messages for thread {}: {}", threadId.toHexString(), e.getMessage(), e);
         }
     }

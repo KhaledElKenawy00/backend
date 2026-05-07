@@ -3,7 +3,6 @@ package com.khalwsh.chat_service.controller;
 import com.khalwsh.chat_service.dto.request.EditMessageRequest;
 import com.khalwsh.chat_service.dto.request.SendMessageRequest;
 import com.khalwsh.chat_service.dto.response.MessageResponse;
-import com.khalwsh.chat_service.dto.response.PaginatedResponse;
 import com.khalwsh.chat_service.dto.response.WebSocketEvent;
 import com.khalwsh.chat_service.service.ChannelService;
 import com.khalwsh.chat_service.service.MessageService;
@@ -19,7 +18,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -40,6 +38,8 @@ public class MessageController {
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
 
         MessageResponse response = messageService.sendMessage(id, request, user.getUserId(), user.getRole());
+        broadcastMessageEvent(WebSocketEvent.NEW_MESSAGE, response);
+
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -54,25 +54,17 @@ public class MessageController {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
 
-        // must be a member to read messages
         if (!channelService.isMember(id, user.getUserId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of this channel");
         }
 
-        // cursor-based takes priority over page-based
         if (before != null) {
-            List<MessageResponse> messages = messageService.getChannelMessagesBefore(id, before, limit);
-            return ResponseEntity.ok(messages);
+            return ResponseEntity.ok(messageService.getChannelMessagesBefore(id, before, limit));
         }
-
         if (after != null) {
-            List<MessageResponse> messages = messageService.getChannelMessagesAfter(id, after, limit);
-            return ResponseEntity.ok(messages);
+            return ResponseEntity.ok(messageService.getChannelMessagesAfter(id, after, limit));
         }
-
-        // fallback to page-based pagination
-        PaginatedResponse<MessageResponse> response = messageService.getChannelMessages(id, page, limit);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(messageService.getChannelMessages(id, page, limit));
     }
 
     @PutMapping("/messages/{id}")
@@ -83,13 +75,7 @@ public class MessageController {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
         MessageResponse response = messageService.editMessage(id, request.getContent(), user.getUserId(), user.getRole());
-
-        // broadcast edit to subscribers
-        WebSocketEvent<MessageResponse> event = WebSocketEvent.of(WebSocketEvent.EDIT_MESSAGE, response);
-        String topic = response.getThreadId() != null
-                ? "/topic/thread/" + response.getThreadId()
-                : "/topic/channel/" + response.getChannelId();
-        messagingTemplate.convertAndSend(topic, event);
+        broadcastMessageEvent(WebSocketEvent.EDIT_MESSAGE, response);
 
         return ResponseEntity.ok(response);
     }
@@ -102,16 +88,29 @@ public class MessageController {
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
         MessageResponse deleted = messageService.deleteMessage(id, user.getUserId(), user.getRole());
 
-        // broadcast delete to subscribers
+        // null means already-deleted — skip the broadcast
         if (deleted != null) {
-            WebSocketEvent<Map<String, String>> event = WebSocketEvent.of(
-                    WebSocketEvent.DELETE_MESSAGE, Map.of("messageId", id));
-            String topic = deleted.getThreadId() != null
-                    ? "/topic/thread/" + deleted.getThreadId()
-                    : "/topic/channel/" + deleted.getChannelId();
-            messagingTemplate.convertAndSend(topic, event);
+            broadcastDeleteEvent(deleted, id);
         }
 
         return ResponseEntity.ok().build();
+    }
+
+    // thread messages broadcast to both topics; clients dedupe on payload.id
+    private void broadcastMessageEvent(String action, MessageResponse message) {
+        WebSocketEvent<MessageResponse> event = WebSocketEvent.of(action, message);
+        messagingTemplate.convertAndSend("/topic/channel/" + message.getChannelId(), event);
+        if (message.getThreadId() != null) {
+            messagingTemplate.convertAndSend("/topic/thread/" + message.getThreadId(), event);
+        }
+    }
+
+    private void broadcastDeleteEvent(MessageResponse deleted, String messageId) {
+        WebSocketEvent<Map<String, String>> event = WebSocketEvent.of(
+                WebSocketEvent.DELETE_MESSAGE, Map.of("messageId", messageId));
+        messagingTemplate.convertAndSend("/topic/channel/" + deleted.getChannelId(), event);
+        if (deleted.getThreadId() != null) {
+            messagingTemplate.convertAndSend("/topic/thread/" + deleted.getThreadId(), event);
+        }
     }
 }

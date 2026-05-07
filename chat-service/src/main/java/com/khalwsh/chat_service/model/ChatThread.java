@@ -13,7 +13,6 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
-// a thread branching off a channel message
 @Data
 @Builder
 @NoArgsConstructor
@@ -36,7 +35,7 @@ public class ChatThread {
 
     private Integer createdBy;
 
-    // needed for admin-vs-admin delete checks
+    // captured at creation time so the admin-vs-admin delete rule still works after a role change
     private String creatorRole;
 
     @Builder.Default

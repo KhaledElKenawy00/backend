@@ -8,8 +8,6 @@ import com.khalwsh.chat_service.model.ChatThread;
 import com.khalwsh.chat_service.model.Message;
 import org.bson.types.ObjectId;
 
-// converts domain models to response DTOs
-// ObjectId fields are turned into hex strings for the client
 public class DtoMapper {
 
     private DtoMapper() {}
@@ -58,7 +56,6 @@ public class DtoMapper {
                 .build();
     }
 
-    // null-safe ObjectId to hex string
     private static String toHex(ObjectId objectId) {
         return objectId != null ? objectId.toHexString() : null;
     }

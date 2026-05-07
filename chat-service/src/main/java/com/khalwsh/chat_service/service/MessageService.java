@@ -24,6 +24,6 @@ public interface MessageService {
 
     MessageResponse editMessage(String messageId, String newContent, Integer requestingUserId, String requestingUserRole);
 
-    // returns the deleted message response (with channelId/threadId) for WS broadcast, or null if already deleted
+    // returns null when the message was already deleted (caller should skip the broadcast)
     MessageResponse deleteMessage(String messageId, Integer requestingUserId, String requestingUserRole);
 }

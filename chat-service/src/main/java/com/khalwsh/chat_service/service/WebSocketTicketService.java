@@ -4,9 +4,8 @@ import java.util.Map;
 
 public interface WebSocketTicketService {
 
-    // generate a one-time ws auth ticket (stores userId + role)
     String createTicket(Integer userId, String role);
 
-    // validate + consume ticket, returns {userId, userRole} or null
+    // returns {userId, userRole} on success, or null if the ticket is invalid/expired/already-used
     Map<String, Object> validateAndConsumeTicket(String ticket);
 }

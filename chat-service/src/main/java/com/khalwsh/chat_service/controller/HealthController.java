@@ -4,7 +4,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// health check — no auth required, used by Docker / monitoring
+// no auth required — kept outside the Nginx-protected paths so probes can hit it directly
 @RestController
 @RequestMapping("/api/chat")
 public class HealthController {

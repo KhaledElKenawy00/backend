@@ -29,8 +29,8 @@ docker compose up -d
 mvnw.cmd spring-boot:run
 ```
 
-The service starts on **http://localhost:8084**.  
-Health check: `GET /api/chat/health` → `"OK"`
+The service starts on **http://localhost:8084**.
+Health check: `GET /api/chat/health` → plain text body `OK` (Content-Type: `text/plain`).
 
 ---
 
@@ -41,9 +41,11 @@ This service does NOT handle JWT itself. It expects **Nginx** to validate the JW
 | Header | Description |
 |---|---|
 | `X-User-Id` | integer user ID (e.g. `42`) |
-| `X-User-Role` | `ADMIN` or `USER` |
+| `X-User-Role` | `ADMIN` or `USER` (case-insensitive) |
 
 Every REST request must include these headers. For local testing without Nginx, just set them manually.
+
+If `X-User-Id` is missing or blank the request fails with **401**. If `X-User-Id` is non-numeric or `X-User-Role` is missing/invalid the request fails with **400**.
 
 ---
 
@@ -65,7 +67,7 @@ POST /api/chat/channels
   "members": [1, 2, 3]
 }
 ```
-All fields required. The creator is auto-added to members.
+All three fields are required. `members` must contain at least one user ID; the requesting user (creator) is auto-added on top of whatever is sent — pass `[creatorId]` if you want a single-member channel.
 
 **Response** `201`:
 ```json
@@ -80,6 +82,8 @@ All fields required. The creator is auto-added to members.
   "updatedAt": "2026-04-10T14:00:00Z"
 }
 ```
+
+`409 Conflict` if another channel with the same `(workspaceId, name)` already exists.
 
 #### List workspace channels
 ```
@@ -101,18 +105,21 @@ Returns only channels the requesting user is a member of.
 ```
 GET /api/chat/channels/{id}
 ```
+Membership is required. Returns `403` for non-members and `404` if the channel does not exist.
 
 #### Join a channel
 ```
 POST /api/chat/channels/{id}/join
 ```
-No body needed. Only works for GROUP channels. Idempotent (joining twice is fine).
+No body. Only works for `GROUP` channels (DMs return `400`). Idempotent. **Response:** `200 OK`, empty body.
 
 #### Leave a channel
 ```
 POST /api/chat/channels/{id}/leave
 ```
-No body needed. Only GROUP channels. Returns 400 if not a member.
+No body. Only `GROUP` channels. Returns `400` if not a member or if the channel is a DM. **Response:** `200 OK`, empty body.
+
+When the last member leaves, the channel document is deleted server-side so it stops occupying the `(workspaceId, name)` uniqueness slot. Frontends don't need to do anything special — subsequent `GET /channels/{id}` returns `404`.
 
 ---
 
@@ -128,9 +135,9 @@ POST /api/chat/dm
   "targetUserId": 2
 }
 ```
-Idempotent — calling twice returns the same DM. Self-DMs are blocked (400).
+Idempotent — calling twice returns the same DM. Self-DMs are blocked (`400`).
 
-**Response** `200`: same `ChannelResponse` shape, with `type: "DIRECT"` and `workspaceId: null`.
+**Response** `200`: same `ChannelResponse` shape, with `type: "DIRECT"`, `workspaceId: null`, and `name: null`. The `members` array contains exactly two user IDs but the order is **not guaranteed** — derive "the other user" by filtering out your own ID.
 
 #### List DMs
 ```
@@ -158,10 +165,10 @@ POST /api/chat/channels/{channelId}/messages
 ```
 Only `content` is required. Everything else is optional.
 
-- `threadId` — if set, the message goes into that thread instead of the main channel feed
-- `replyToId` — inline reply reference
-- `mentions` — array of user IDs being mentioned
-- `clientMessageId` — client-generated UUID for idempotent sends. If you retry with the same `clientMessageId`, you get the original message back instead of a duplicate.
+- `threadId` — if set, the message goes into that thread instead of the main channel feed.
+- `replyToId` — inline reply reference.
+- `mentions` — array of user IDs being mentioned.
+- `clientMessageId` — client-generated UUID for idempotent sends. If you retry with the same `clientMessageId`, you get the original message back instead of a duplicate. Empty/blank strings are treated the same as omitting the field — no dedup will be performed.
 
 **Response** `201`:
 ```json
@@ -182,6 +189,10 @@ Only `content` is required. Everything else is optional.
 }
 ```
 
+**Important:** REST `POST /messages` *also* publishes a `NEW_MESSAGE` WebSocket event to the channel topic (and to the thread topic if `threadId` is set). A frontend that uses REST to send and WebSocket to receive will see its own send arrive over the socket too — dedupe on `MessageResponse.id` if that is unwanted.
+
+The `senderRole` field is stored server-side for admin-vs-admin delete checks but is **not** returned in `MessageResponse`.
+
 #### Get channel messages (page-based)
 ```
 GET /api/chat/channels/{channelId}/messages?page=1&limit=50
@@ -195,12 +206,12 @@ Returns top-level messages only (thread replies are excluded). Sorted newest fir
 GET /api/chat/channels/{channelId}/messages?before={messageId}&limit=50
 GET /api/chat/channels/{channelId}/messages?after={messageId}&limit=50
 ```
-- `before` — load older messages (scroll up)
-- `after` — load newer messages (catch up after reconnect)
+- `before` — load older messages (scroll up).
+- `after` — load newer messages (catch up after reconnect).
 
 Cursor-based takes priority over page-based if both are provided.
 
-**Response** `200`: `MessageResponse[]` (flat array, no pagination wrapper)
+**Response** `200`: `MessageResponse[]` (flat array, no pagination wrapper).
 
 #### Edit a message
 ```
@@ -212,9 +223,11 @@ PUT /api/chat/messages/{messageId}
   "content": "edited text"
 }
 ```
-Only the original sender can edit. Admins cannot edit anyone else's messages.
+Edit is restricted to the original sender; **role does not matter** — admins cannot edit other users' messages. Returns `403` if a non-author tries to edit.
 
-**Response** `200`: updated `MessageResponse`
+**Response** `200`: updated `MessageResponse`.
+
+Also broadcasts an `EDIT_MESSAGE` event to the channel topic (and the thread topic when the message is in a thread).
 
 #### Delete a message (soft)
 ```
@@ -223,10 +236,12 @@ DELETE /api/chat/messages/{messageId}
 Sets `deleted: true` and `content: null`. The message stays in the DB.
 
 **Rules:**
-- Users can delete their own messages
-- Admins can delete non-admin users' messages
-- Admins CANNOT delete other admins' messages
-- Already-deleted messages are silently skipped
+- Users can delete their own messages.
+- Admins can delete non-admin users' messages.
+- Admins CANNOT delete other admins' messages (`403`).
+- Already-deleted messages are silently skipped — no broadcast is emitted.
+
+**Response:** `200 OK`, empty body. On success, broadcasts `DELETE_MESSAGE` to the channel topic (and thread topic when applicable) with payload `{ "messageId": "..." }`.
 
 ---
 
@@ -246,10 +261,10 @@ POST /api/chat/channels/{channelId}/threads
 Both fields required.
 
 **Validation rules:**
-- Root message must exist
-- Root message must belong to this channel
-- Root message can't already be inside a thread
-- Only one thread per root message (409 if duplicate)
+- Root message must exist.
+- Root message must belong to this channel.
+- Root message can't already be inside a thread.
+- Only one thread per root message (`409` if duplicate).
 
 **Response** `201`:
 ```json
@@ -282,6 +297,8 @@ DELETE /api/chat/threads/{threadId}
 ```
 Same admin rules as message deletion. Thread messages are cleaned up asynchronously.
 
+**Response:** `200 OK`, empty body. Broadcasts `THREAD_DELETED` to **both** `/topic/channel/{channelId}` and `/topic/thread/{threadId}` with payload `{ "threadId": "...", "channelId": "..." }`.
+
 #### Get thread messages
 ```
 GET /api/chat/threads/{threadId}/messages?page=1&limit=50
@@ -306,7 +323,9 @@ POST /api/chat/channels/{channelId}/read
   "lastReadMessageId": "64f1a2b3..."
 }
 ```
-The cursor only moves forward — you can't mark older messages as "last read" if you've already read newer ones.
+The cursor only moves forward — you can't mark older messages as "last read" if you've already read newer ones (newer marks win silently).
+
+**Validation:** `lastReadMessageId` must exist, must belong to the same channel, and must be a top-level message (not a thread reply). Bad input returns `400`. Read cursors expire after 30 days of inactivity (refreshed on every successful mark).
 
 #### Get channel unread count
 ```
@@ -319,13 +338,13 @@ GET /api/chat/channels/{channelId}/unread
   "lastReadMessageId": "64f1a2b3..."
 }
 ```
-`lastReadMessageId` is `null` if nothing has been read yet.
+`lastReadMessageId` is `null` if nothing has been read yet (in which case `unreadCount` is the total number of top-level messages in the channel).
 
 #### Mark thread as read
 ```
 POST /api/chat/threads/{threadId}/read
 ```
-Same body as channel read.
+Same body as channel read. `lastReadMessageId` must belong to this thread; otherwise `400`.
 
 #### Get thread unread count
 ```
@@ -355,8 +374,8 @@ Ticket is valid for **60 seconds** and can only be used **once**.
 
 ### Connecting
 
-1. Call `POST /api/chat/ws-ticket` to get a ticket (via REST, with `X-User-Id` header)
-2. Connect via STOMP to: `ws://localhost:8084/api/chat/connect?ticket={ticket}`
+1. Call `POST /api/chat/ws-ticket` to get a ticket (via REST, with `X-User-Id` header).
+2. Connect via STOMP to: `ws://localhost:8084/api/chat/connect?ticket={ticket}`.
 
 The ticket is validated during the handshake. If invalid or expired, the connection is rejected.
 
@@ -366,12 +385,15 @@ Subscribe to topics to receive real-time updates:
 
 | Topic | Events |
 |---|---|
-| `/topic/channel/{channelId}` | new messages, edits, deletes in that channel |
-| `/topic/thread/{threadId}` | new messages, edits, deletes in that thread |
-| `/topic/channel/{channelId}/typing` | typing indicators for channel |
-| `/topic/thread/{threadId}/typing` | typing indicators for thread |
+| `/topic/channel/{channelId}` | `NEW_MESSAGE`, `EDIT_MESSAGE`, `DELETE_MESSAGE`, `THREAD_DELETED` for that channel (incl. thread activity that originates from this channel) |
+| `/topic/thread/{threadId}` | `NEW_MESSAGE`, `EDIT_MESSAGE`, `DELETE_MESSAGE`, `THREAD_DELETED` for that thread |
+| `/topic/channel/{channelId}/typing` | `TYPING` indicators for the channel |
+| `/topic/thread/{threadId}/typing` | `TYPING` indicators for the thread |
+| `/user/queue/errors` | per-session error envelopes (see *Error Handling* below) |
 
-Subscription is **authorized** — you can only subscribe to channels you're a member of. Thread access is checked through the parent channel.
+Subscription is **authorized** — you can only subscribe to channels you're a member of. Thread access is checked through the parent channel. If a `SUBSCRIBE` is rejected, the server sends a structured `ERROR` envelope to `/user/queue/errors` and silently drops the subscribe (no `RECEIPT` will arrive).
+
+> **Duplicate delivery:** thread messages are broadcast to both the thread topic *and* the parent channel topic. Clients subscribed to both will receive the same event twice — dedupe on `MessageResponse.id` (or `payload.messageId` for `DELETE_MESSAGE`).
 
 ### Sending Messages (via STOMP)
 
@@ -413,11 +435,12 @@ All WebSocket messages come wrapped in this format:
 
 | Action | Payload | When |
 |---|---|---|
-| `NEW_MESSAGE` | `MessageResponse` | someone sent a message |
+| `NEW_MESSAGE` | `MessageResponse` | someone sent a message (REST or STOMP) |
 | `EDIT_MESSAGE` | `MessageResponse` | someone edited a message |
-| `DELETE_MESSAGE` | `{ messageId }` | someone deleted a message |
+| `DELETE_MESSAGE` | `{ "messageId": "..." }` | someone deleted a message |
 | `TYPING` | `TypingNotification` | someone started/stopped typing |
-| `THREAD_DELETED` | thread info | a thread was soft-deleted |
+| `THREAD_DELETED` | `{ "threadId": "...", "channelId": "..." }` | a thread was soft-deleted |
+| `ERROR` | `{ "code": "...", "message": "..." }` | per-session error (see below) |
 
 **TypingNotification:**
 ```json
@@ -431,7 +454,7 @@ All WebSocket messages come wrapped in this format:
 
 ### Error Handling (STOMP)
 
-Errors are sent to `/user/queue/errors` (subscribe to this path to receive error notifications):
+Errors are sent to `/user/queue/errors` (subscribe to this path to receive error notifications). They use the same `WebSocketEvent` envelope:
 ```json
 {
   "action": "ERROR",
@@ -446,8 +469,10 @@ Errors are sent to `/user/queue/errors` (subscribe to this path to receive error
 |---|---|
 | `NOT_A_MEMBER` | user isn't in the channel |
 | `CHANNEL_NOT_FOUND` | channel/thread doesn't exist |
-| `INVALID_PAYLOAD` | missing required fields |
-| `INTERNAL_ERROR` | something unexpected broke |
+| `INVALID_PAYLOAD` | missing required fields, malformed ObjectId, or empty path segment |
+| `INTERNAL_ERROR` | something unexpected broke (or session identity is missing) |
+
+Both `SUBSCRIBE` rejections (membership/auth failures) and `SEND` failures (`/app/chat/send`) flow through the same channel.
 
 ---
 
@@ -463,10 +488,13 @@ All REST errors follow this shape:
 }
 ```
 
+For validation errors with multiple field violations, `message` joins them with `; ` — e.g. `"name: must not be blank; workspaceId: must not be null"`.
+
 | Status | When |
 |---|---|
-| `400` | validation failures, bad input |
-| `403` | not a member, can't edit/delete someone else's stuff |
+| `400` | validation failures, bad input, malformed ObjectId, or `X-User-Id`/`X-User-Role` malformed |
+| `401` | missing `X-User-Id` header |
+| `403` | not a member, can't edit/delete someone else's message |
 | `404` | channel/message/thread not found |
 | `409` | duplicate thread for the same root message, or duplicate channel name in the same workspace |
 | `503` | MongoDB or Redis is down |
@@ -475,9 +503,9 @@ All REST errors follow this shape:
 
 ## Data Types Quick Reference
 
-- All IDs are **MongoDB ObjectId strings** (24-char hex, e.g. `"64f1a2b3c4d5e6f7a8b9c0d1"`)
-- Timestamps are **ISO 8601 UTC** (e.g. `"2026-04-10T14:00:00Z"`)
-- User IDs are **integers** (e.g. `42`)
-- Channel types: `"GROUP"` or `"DIRECT"`
-- Message types: `"TEXT"` or `"SYSTEM"`
-- Pages are **1-based** (page=1 is the first page)
+- All IDs are **MongoDB ObjectId strings** (24-char hex, e.g. `"64f1a2b3c4d5e6f7a8b9c0d1"`).
+- Timestamps are **ISO 8601 UTC** (e.g. `"2026-04-10T14:00:00Z"`).
+- User IDs are **integers** (e.g. `42`).
+- Channel types: `"GROUP"` or `"DIRECT"`.
+- Message types: `"TEXT"` or `"SYSTEM"` (the API only ever creates `TEXT` from client requests).
+- Pages are **1-based** (`page=1` is the first page).

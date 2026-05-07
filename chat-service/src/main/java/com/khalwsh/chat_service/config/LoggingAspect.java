@@ -1,26 +1,24 @@
 package com.khalwsh.chat_service.config;
 
 import lombok.extern.slf4j.Slf4j;
-import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.*;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Arrays;
 
-// logs every service and controller call so we can trace what's going on
-// without sprinkling log statements everywhere
 @Slf4j
 @Aspect
 @Component
 public class LoggingAspect {
 
-    // all public methods in service impls
     @Pointcut("execution(* com.khalwsh.chat_service.service.impl..*(..))")
     private void serviceMethods() {}
 
-    // all public methods in controllers
-    @Pointcut("execution(* com.khalwsh.chat_service.controller..*(..))")
+    // skip HealthController — health probes hit continuously and would drown out the rest
+    @Pointcut("execution(* com.khalwsh.chat_service.controller..*(..)) "
+            + "&& !execution(* com.khalwsh.chat_service.controller.HealthController.*(..))")
     private void controllerMethods() {}
 
     @Around("serviceMethods()")
@@ -30,12 +28,18 @@ public class LoggingAspect {
         long start = System.currentTimeMillis();
         try {
             Object result = jp.proceed();
-            long elapsed = System.currentTimeMillis() - start;
-            log.debug("<<< {} returned in {}ms", method, elapsed);
+            log.debug("<<< {} returned in {}ms", method, System.currentTimeMillis() - start);
             return result;
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - start;
-            log.warn("!!! {} threw {} after {}ms: {}", method, e.getClass().getSimpleName(), elapsed, e.getMessage());
+            // 4xx is normal client behaviour, not a service fault — keep it quiet
+            if (e instanceof ResponseStatusException) {
+                log.debug("--- {} rejected with {} after {}ms: {}",
+                        method, e.getClass().getSimpleName(), elapsed, e.getMessage());
+            } else {
+                log.warn("!!! {} threw {} after {}ms: {}",
+                        method, e.getClass().getSimpleName(), elapsed, e.getMessage());
+            }
             throw e;
         }
     }
@@ -47,17 +51,20 @@ public class LoggingAspect {
         long start = System.currentTimeMillis();
         try {
             Object result = jp.proceed();
-            long elapsed = System.currentTimeMillis() - start;
-            log.info("<= {} completed in {}ms", method, elapsed);
+            log.info("<= {} completed in {}ms", method, System.currentTimeMillis() - start);
             return result;
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - start;
-            log.error("<= {} failed after {}ms: {}", method, elapsed, e.getMessage());
+            if (e instanceof ResponseStatusException) {
+                log.info("<= {} rejected after {}ms: {}", method, elapsed, e.getMessage());
+            } else {
+                log.error("<= {} failed after {}ms: {}", method, elapsed, e.getMessage());
+            }
             throw e;
         }
     }
 
-    // keep it short — don't dump entire objects
+    // class names only — argument values may contain user content we don't want in logs
     private String summarizeArgs(Object[] args) {
         if (args == null || args.length == 0) return "[]";
         return Arrays.stream(args)

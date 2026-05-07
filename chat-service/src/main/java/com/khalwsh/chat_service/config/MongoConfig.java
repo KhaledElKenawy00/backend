@@ -9,8 +9,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.config.EnableMongoAuditing;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
-// indexes that need partialFilterExpression can't be done with @CompoundIndex
-// because Spring writes null explicitly and mongo sparse only skips *missing* fields
+// declares the partial-unique indexes that Spring's @CompoundIndex can't express:
+// `sparse: true` still indexes documents whose field is present-but-null, but Spring
+// always writes nulls, so we have to filter on `$exists: true, $ne: null` instead.
 @Configuration
 @EnableMongoAuditing
 @RequiredArgsConstructor
@@ -22,10 +23,9 @@ public class MongoConfig {
     void ensureIndexes() {
         ensureIdempotencyIndex();
         ensureChannelNameUniqueness();
+        ensureDmKeyUniqueness();
     }
 
-    // idempotency: (senderId, clientMessageId) must be unique,
-    // but only when clientMessageId is actually set
     private void ensureIdempotencyIndex() {
         var messages = mongoTemplate.getCollection("messages");
         messages.createIndex(
@@ -45,8 +45,6 @@ public class MongoConfig {
         );
     }
 
-    // channel names should be unique within a workspace.
-    // DMs have workspaceId=null so they're excluded from this constraint.
     private void ensureChannelNameUniqueness() {
         var channels = mongoTemplate.getCollection("channels");
         channels.createIndex(
@@ -61,6 +59,22 @@ public class MongoConfig {
                                 Filters.and(
                                         Filters.exists("workspaceId"),
                                         Filters.ne("workspaceId", null)
+                                )
+                        )
+        );
+    }
+
+    private void ensureDmKeyUniqueness() {
+        var channels = mongoTemplate.getCollection("channels");
+        channels.createIndex(
+                Indexes.ascending("dmKey"),
+                new IndexOptions()
+                        .name("idx_dmKey")
+                        .unique(true)
+                        .partialFilterExpression(
+                                Filters.and(
+                                        Filters.exists("dmKey"),
+                                        Filters.ne("dmKey", null)
                                 )
                         )
         );

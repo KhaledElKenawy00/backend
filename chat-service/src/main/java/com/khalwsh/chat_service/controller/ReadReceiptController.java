@@ -62,7 +62,6 @@ public class ReadReceiptController {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
 
-        // check membership via the thread's parent channel
         String channelId = threadService.getThread(threadId).getChannelId();
         if (!channelService.isMember(channelId, user.getUserId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of the parent channel");
@@ -79,13 +78,11 @@ public class ReadReceiptController {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
 
-        // check membership via the thread's parent channel
         String channelId = threadService.getThread(threadId).getChannelId();
         if (!channelService.isMember(channelId, user.getUserId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member of the parent channel");
         }
 
-        UnreadCountResponse response = readReceiptService.getThreadUnreadCount(threadId, user.getUserId());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(readReceiptService.getThreadUnreadCount(threadId, user.getUserId()));
     }
 }

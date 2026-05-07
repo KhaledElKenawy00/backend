@@ -29,8 +29,13 @@ public class ChatStompController {
 
     @MessageMapping("/chat/send")
     public void handleSendMessage(StompSendMessage payload, SimpMessageHeaderAccessor headerAccessor) {
-        Integer userId = getUserId(headerAccessor);
-        String role = getUserRole(headerAccessor);
+        Integer userId = readUserId(headerAccessor);
+        String role = readUserRole(headerAccessor);
+        if (userId == null || role == null) {
+            // handshake interceptor should have set these — if they're missing the session is broken
+            sendErrorToUser(headerAccessor, "INTERNAL_ERROR", "missing session identity");
+            return;
+        }
 
         if (payload.getChannelId() == null || payload.getContent() == null || payload.getContent().isBlank()) {
             sendErrorToUser(headerAccessor, "INVALID_PAYLOAD", "channelId and content are required");
@@ -47,34 +52,29 @@ public class ChatStompController {
                     .build();
 
             MessageResponse saved = messageService.sendMessage(payload.getChannelId(), request, userId, role);
-
-            // wrap in the event envelope
             WebSocketEvent<MessageResponse> event = WebSocketEvent.of(WebSocketEvent.NEW_MESSAGE, saved);
 
-            // send to the right topic
+            // thread messages broadcast to both topics so channel subscribers see thread activity too
+            messagingTemplate.convertAndSend("/topic/channel/" + payload.getChannelId(), event);
             if (payload.getThreadId() != null) {
                 messagingTemplate.convertAndSend("/topic/thread/" + payload.getThreadId(), event);
-                messagingTemplate.convertAndSend("/topic/channel/" + payload.getChannelId(), event);
-            } else {
-                messagingTemplate.convertAndSend("/topic/channel/" + payload.getChannelId(), event);
             }
         } catch (ResponseStatusException e) {
-            String code = mapStatusToCode(e);
-            sendErrorToUser(headerAccessor, code, e.getReason());
+            sendErrorToUser(headerAccessor, mapStatusToCode(e), e.getReason());
+        } catch (IllegalArgumentException e) {
+            // malformed ObjectId on channelId/threadId/replyToId
+            sendErrorToUser(headerAccessor, "INVALID_PAYLOAD", e.getMessage());
         } catch (Exception e) {
             log.error("error handling STOMP send: {}", e.getMessage(), e);
             sendErrorToUser(headerAccessor, "INTERNAL_ERROR", "failed to send message");
         }
     }
 
-
-
     @MessageMapping("/chat/typing")
     public void handleTyping(StompTypingEvent payload, SimpMessageHeaderAccessor headerAccessor) {
-        Integer userId = getUserId(headerAccessor);
-
-        if (payload.getChannelId() == null) {
-            return; // ignore bad typing events
+        Integer userId = readUserId(headerAccessor);
+        if (userId == null || payload.getChannelId() == null) {
+            return;
         }
 
         TypingNotification notification = TypingNotification.builder()
@@ -103,26 +103,20 @@ public class ChatStompController {
         ));
     }
 
-    private Integer getUserId(SimpMessageHeaderAccessor headerAccessor) {
+    // returns null if the session is missing identity — callers emit an error envelope instead of throwing
+    private Integer readUserId(SimpMessageHeaderAccessor headerAccessor) {
         Map<String, Object> sessionAttrs = headerAccessor.getSessionAttributes();
-        if (sessionAttrs == null || !sessionAttrs.containsKey("userId")) {
-            throw new IllegalStateException("no userId in WebSocket session — handshake interceptor may have failed");
-        }
+        if (sessionAttrs == null) return null;
         return (Integer) sessionAttrs.get("userId");
     }
-    private String getUserRole(SimpMessageHeaderAccessor headerAccessor) {
+
+    private String readUserRole(SimpMessageHeaderAccessor headerAccessor) {
         Map<String, Object> sessionAttrs = headerAccessor.getSessionAttributes();
-        if (sessionAttrs == null || !sessionAttrs.containsKey("userRole")) {
-            throw new IllegalStateException("no userRole in WebSocket session — handshake interceptor may have failed");
-        }
+        if (sessionAttrs == null) return null;
         return (String) sessionAttrs.get("userRole");
     }
-    private void sendErrorToUser(SimpMessageHeaderAccessor headerAccessor,
-                                 String code,
-                                 String message) {
 
-        String sessionId = headerAccessor.getSessionId();
-
+    private void sendErrorToUser(SimpMessageHeaderAccessor headerAccessor, String code, String message) {
         WebSocketEvent<Map<String, String>> error = WebSocketEvent.of(
                 "ERROR",
                 Map.of(
@@ -130,13 +124,8 @@ public class ChatStompController {
                         "message", message != null ? message : "unknown error"
                 )
         );
-
-        // send to /user/{sessionId}/queue/errors — same path as @SendToUser("/queue/errors")
-        messagingTemplate.convertAndSendToUser(
-                sessionId,
-                "/queue/errors",
-                error
-        );
+        // resolves to /user/{sessionId}/queue/errors — matches the @SendToUser path used by handleException
+        messagingTemplate.convertAndSendToUser(headerAccessor.getSessionId(), "/queue/errors", error);
     }
 
     private String mapStatusToCode(ResponseStatusException e) {

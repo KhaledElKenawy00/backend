@@ -11,9 +11,8 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 
 import java.util.Map;
 
-// checks the one-time ticket during WS handshake
-// connect to: /api/chat/connect?ticket={ticket}
-// if valid, stashes userId in session for STOMP handlers
+// validates ?ticket={...} on the WS handshake and stashes (userId, userRole)
+// into the session so STOMP handlers downstream can read them
 @Component
 @RequiredArgsConstructor
 public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
@@ -29,10 +28,9 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
             Map<String, Object> ticketData = webSocketTicketService.validateAndConsumeTicket(ticket);
 
             if (ticketData == null) {
-                return false; // bad or expired ticket
+                return false;
             }
 
-            // put userId and userRole in session for STOMP handlers
             attributes.put("userId", ticketData.get("userId"));
             attributes.put("userRole", ticketData.get("userRole"));
             return true;
@@ -44,6 +42,5 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
     @Override
     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                WebSocketHandler wsHandler, Exception exception) {
-        // nothing needed here
     }
 }

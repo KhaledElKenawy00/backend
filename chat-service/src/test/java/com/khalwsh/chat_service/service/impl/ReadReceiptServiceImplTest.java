@@ -1,6 +1,8 @@
 package com.khalwsh.chat_service.service.impl;
 
 import com.khalwsh.chat_service.dto.response.UnreadCountResponse;
+import com.khalwsh.chat_service.model.Message;
+import com.khalwsh.chat_service.model.MessageType;
 import com.khalwsh.chat_service.repository.MessageRepository;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Nested;
@@ -12,10 +14,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -35,8 +42,36 @@ class ReadReceiptServiceImplTest {
     @InjectMocks
     private ReadReceiptServiceImpl readReceiptService;
 
+    // helpers ────────────────────────────────────────
+
+    private Message channelMsg(ObjectId id, ObjectId channelId) {
+        return Message.builder()
+                .id(id)
+                .channelId(channelId)
+                .threadId(null)
+                .senderId(10)
+                .type(MessageType.TEXT)
+                .deleted(false)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+    }
+
+    private Message threadMsg(ObjectId id, ObjectId channelId, ObjectId threadId) {
+        return Message.builder()
+                .id(id)
+                .channelId(channelId)
+                .threadId(threadId)
+                .senderId(10)
+                .type(MessageType.TEXT)
+                .deleted(false)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+    }
+
     // ────────────────────────────────────────
-    // channel read receipts
+    // channel mark-as-read — validation
     // ────────────────────────────────────────
 
     @Nested
@@ -44,31 +79,78 @@ class ReadReceiptServiceImplTest {
 
         @Test
         void shouldCallLuaScriptWithCorrectKey() {
-            String channelId = new ObjectId().toHexString();
-            String messageId = new ObjectId().toHexString();
+            ObjectId channelId = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            when(messageRepository.findById(messageId))
+                    .thenReturn(Optional.of(channelMsg(messageId, channelId)));
 
-            readReceiptService.markAsRead(channelId, 10, messageId);
+            readReceiptService.markAsRead(channelId.toHexString(), 10, messageId.toHexString());
 
-            // lua script should be called with the correct key and message id
             verify(redisTemplate).execute(
                     any(RedisScript.class),
-                    eq(List.of("read:" + channelId + ":10")),
-                    eq(messageId)
+                    eq(List.of("read:" + channelId.toHexString() + ":10")),
+                    eq(messageId.toHexString()),
+                    eq(String.valueOf(30L * 24 * 3600))
             );
         }
 
         @Test
-        void shouldFormCorrectRedisKeyForChannel() {
-            String channelId = new ObjectId().toHexString();
-            String messageId = new ObjectId().toHexString();
+        void shouldRejectWhenMessageNotFound() {
+            ObjectId channelId = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            when(messageRepository.findById(messageId)).thenReturn(Optional.empty());
 
-            readReceiptService.markAsRead(channelId, 42, messageId);
+            assertThatThrownBy(() ->
+                    readReceiptService.markAsRead(channelId.toHexString(), 10, messageId.toHexString()))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .satisfies(e -> {
+                        ResponseStatusException rse = (ResponseStatusException) e;
+                        assertThat(rse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(rse.getReason()).contains("not found");
+                    });
+            verifyNoInteractions(redisTemplate);
+        }
 
-            verify(redisTemplate).execute(
-                    any(RedisScript.class),
-                    eq(List.of("read:" + channelId + ":42")),
-                    eq(messageId)
-            );
+        @Test
+        void shouldRejectWhenMessageBelongsToAnotherChannel() {
+            ObjectId myChannel = new ObjectId();
+            ObjectId otherChannel = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            when(messageRepository.findById(messageId))
+                    .thenReturn(Optional.of(channelMsg(messageId, otherChannel)));
+
+            assertThatThrownBy(() ->
+                    readReceiptService.markAsRead(myChannel.toHexString(), 10, messageId.toHexString()))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("does not belong to this channel");
+            verifyNoInteractions(redisTemplate);
+        }
+
+        @Test
+        void shouldRejectWhenMessageIsAThreadReply() {
+            ObjectId channelId = new ObjectId();
+            ObjectId threadId = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            when(messageRepository.findById(messageId))
+                    .thenReturn(Optional.of(threadMsg(messageId, channelId, threadId)));
+
+            assertThatThrownBy(() ->
+                    readReceiptService.markAsRead(channelId.toHexString(), 10, messageId.toHexString()))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("thread reply");
+            verifyNoInteractions(redisTemplate);
+        }
+
+        @Test
+        void shouldRejectWhenMessageIdIsMalformed() {
+            ObjectId channelId = new ObjectId();
+
+            assertThatThrownBy(() ->
+                    readReceiptService.markAsRead(channelId.toHexString(), 10, "not-an-objectid"))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode())
+                            .isEqualTo(HttpStatus.BAD_REQUEST));
+            verifyNoInteractions(redisTemplate);
         }
     }
 
@@ -89,26 +171,27 @@ class ReadReceiptServiceImplTest {
 
             assertThat(response.getUnreadCount()).isEqualTo(5);
             assertThat(response.getLastReadMessageId()).isEqualTo(lastRead.toHexString());
+            verify(messageRepository, never()).countChannelMessages(any());
         }
 
         @Test
-        void shouldCountAllMessagesWhenNeverRead() {
+        void shouldUseTotalCountWhenNeverRead() {
             String channelId = new ObjectId().toHexString();
 
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get("read:" + channelId + ":10")).thenReturn(null);
-            when(messageRepository.countChannelMessagesAfter(eq(new ObjectId(channelId)), any(ObjectId.class)))
-                    .thenReturn(42L);
+            when(messageRepository.countChannelMessages(new ObjectId(channelId))).thenReturn(42L);
 
             UnreadCountResponse response = readReceiptService.getUnreadCount(channelId, 10);
 
             assertThat(response.getUnreadCount()).isEqualTo(42);
             assertThat(response.getLastReadMessageId()).isNull();
+            verify(messageRepository, never()).countChannelMessagesAfter(any(), any());
         }
     }
 
     // ────────────────────────────────────────
-    // thread read receipts
+    // thread mark-as-read — validation
     // ────────────────────────────────────────
 
     @Nested
@@ -116,46 +199,64 @@ class ReadReceiptServiceImplTest {
 
         @Test
         void shouldCallLuaScriptForThread() {
-            String threadId = new ObjectId().toHexString();
-            String messageId = new ObjectId().toHexString();
+            ObjectId channelId = new ObjectId();
+            ObjectId threadId = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            when(messageRepository.findById(messageId))
+                    .thenReturn(Optional.of(threadMsg(messageId, channelId, threadId)));
 
-            readReceiptService.markThreadAsRead(threadId, 10, messageId);
+            readReceiptService.markThreadAsRead(threadId.toHexString(), 10, messageId.toHexString());
 
             verify(redisTemplate).execute(
                     any(RedisScript.class),
-                    eq(List.of("read:thread:" + threadId + ":10")),
-                    eq(messageId)
+                    eq(List.of("read:thread:" + threadId.toHexString() + ":10")),
+                    eq(messageId.toHexString()),
+                    eq(String.valueOf(30L * 24 * 3600))
             );
         }
 
         @Test
-        void shouldUseThreadKeyPrefix() {
-            String threadId = new ObjectId().toHexString();
-            String messageId = new ObjectId().toHexString();
+        void shouldRejectChannelMessageMarkedAsThreadRead() {
+            ObjectId channelId = new ObjectId();
+            ObjectId threadId = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            when(messageRepository.findById(messageId))
+                    .thenReturn(Optional.of(channelMsg(messageId, channelId)));
 
-            readReceiptService.markThreadAsRead(threadId, 10, messageId);
-
-            // verify the correct key prefix is used (not channel key)
-            verify(redisTemplate).execute(
-                    any(RedisScript.class),
-                    eq(List.of("read:thread:" + threadId + ":10")),
-                    eq(messageId)
-            );
+            assertThatThrownBy(() ->
+                    readReceiptService.markThreadAsRead(threadId.toHexString(), 10, messageId.toHexString()))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("does not belong to this thread");
+            verifyNoInteractions(redisTemplate);
         }
 
         @Test
-        void shouldNotUseChannelKeyForThreadMark() {
-            String threadId = new ObjectId().toHexString();
-            String messageId = new ObjectId().toHexString();
+        void shouldRejectWhenMessageBelongsToAnotherThread() {
+            ObjectId channelId = new ObjectId();
+            ObjectId myThread = new ObjectId();
+            ObjectId otherThread = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            when(messageRepository.findById(messageId))
+                    .thenReturn(Optional.of(threadMsg(messageId, channelId, otherThread)));
 
-            readReceiptService.markThreadAsRead(threadId, 10, messageId);
+            assertThatThrownBy(() ->
+                    readReceiptService.markThreadAsRead(myThread.toHexString(), 10, messageId.toHexString()))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("does not belong to this thread");
+            verifyNoInteractions(redisTemplate);
+        }
 
-            // should NOT call with a channel-style key
-            verify(redisTemplate, never()).execute(
-                    any(RedisScript.class),
-                    eq(List.of("read:" + threadId + ":10")),
-                    eq(messageId)
-            );
+        @Test
+        void shouldRejectWhenMessageNotFound() {
+            ObjectId threadId = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            when(messageRepository.findById(messageId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() ->
+                    readReceiptService.markThreadAsRead(threadId.toHexString(), 10, messageId.toHexString()))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("not found");
+            verifyNoInteractions(redisTemplate);
         }
     }
 
@@ -176,21 +277,22 @@ class ReadReceiptServiceImplTest {
 
             assertThat(response.getUnreadCount()).isEqualTo(3);
             assertThat(response.getLastReadMessageId()).isEqualTo(lastRead.toHexString());
+            verify(messageRepository, never()).countThreadMessages(any());
         }
 
         @Test
-        void shouldCountAllThreadMessagesWhenNeverRead() {
+        void shouldUseTotalCountWhenNeverRead() {
             String threadId = new ObjectId().toHexString();
 
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get("read:thread:" + threadId + ":10")).thenReturn(null);
-            when(messageRepository.countThreadMessagesAfter(eq(new ObjectId(threadId)), any(ObjectId.class)))
-                    .thenReturn(15L);
+            when(messageRepository.countThreadMessages(new ObjectId(threadId))).thenReturn(15L);
 
             UnreadCountResponse response = readReceiptService.getThreadUnreadCount(threadId, 10);
 
             assertThat(response.getUnreadCount()).isEqualTo(15);
             assertThat(response.getLastReadMessageId()).isNull();
+            verify(messageRepository, never()).countThreadMessagesAfter(any(), any());
         }
     }
 }

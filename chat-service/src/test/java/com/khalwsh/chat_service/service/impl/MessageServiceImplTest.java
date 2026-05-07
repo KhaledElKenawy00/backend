@@ -28,6 +28,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -237,6 +238,44 @@ class MessageServiceImplTest {
             ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
             verify(messageRepository).save(captor.capture());
             assertThat(captor.getValue().getClientMessageId()).isNull();
+        }
+
+        @Test
+        void shouldNotPerformDedupLookupWhenClientMessageIdIsBlank() {
+            // C1 regression — normalize must run BEFORE the dedup lookup so two
+            // empty-string retries don't both hit the index with ""
+            when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            when(messageRepository.save(any(Message.class))).thenAnswer(inv -> {
+                Message m = inv.getArgument(0);
+                m.setId(new ObjectId());
+                return m;
+            });
+
+            SendMessageRequest request = SendMessageRequest.builder()
+                    .content("test")
+                    .clientMessageId("")  // empty after blank-normalize
+                    .build();
+
+            messageService.sendMessage(channelId.toHexString(), request, 10, "USER");
+
+            verify(messageRepository, never()).findBySenderIdAndClientMessageId(anyInt(), any());
+            verify(messageRepository).save(any(Message.class));
+        }
+
+        @Test
+        void shouldNotPerformDedupLookupWhenClientMessageIdIsAbsent() {
+            when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            when(messageRepository.save(any(Message.class))).thenAnswer(inv -> {
+                Message m = inv.getArgument(0);
+                m.setId(new ObjectId());
+                return m;
+            });
+
+            SendMessageRequest request = SendMessageRequest.builder().content("test").build();
+
+            messageService.sendMessage(channelId.toHexString(), request, 10, "USER");
+
+            verify(messageRepository, never()).findBySenderIdAndClientMessageId(anyInt(), any());
         }
     }
 

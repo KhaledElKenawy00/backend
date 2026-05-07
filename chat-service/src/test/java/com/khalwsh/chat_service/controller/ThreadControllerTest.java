@@ -153,14 +153,34 @@ class ThreadControllerTest {
     class DeleteThread {
 
         @Test
-        void shouldDeleteAndBroadcast() {
+        void shouldDeleteAndBroadcastToBothChannelAndThreadTopics() {
             HttpServletRequest httpRequest = mockRequest("10", "ADMIN");
+            ThreadResponse thread = ThreadResponse.builder().id("t1").channelId("ch1").build();
+            when(threadService.getThread("t1")).thenReturn(thread);
 
             ResponseEntity<Void> response = controller.deleteThread("t1", httpRequest);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             verify(threadService).deleteThread("t1", 10, "ADMIN");
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
             verify(messagingTemplate).convertAndSend(eq("/topic/thread/t1"), any(WebSocketEvent.class));
+        }
+
+        @Test
+        void shouldIncludeChannelIdAndThreadIdInPayload() {
+            HttpServletRequest httpRequest = mockRequest("10", "USER");
+            ThreadResponse thread = ThreadResponse.builder().id("t1").channelId("ch1").build();
+            when(threadService.getThread("t1")).thenReturn(thread);
+
+            controller.deleteThread("t1", httpRequest);
+
+            org.mockito.ArgumentCaptor<WebSocketEvent> captor = org.mockito.ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), captor.capture());
+            WebSocketEvent<?> event = captor.getValue();
+            assertThat(event.getAction()).isEqualTo("THREAD_DELETED");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> payload = (java.util.Map<String, String>) event.getPayload();
+            assertThat(payload).containsEntry("threadId", "t1").containsEntry("channelId", "ch1");
         }
     }
 

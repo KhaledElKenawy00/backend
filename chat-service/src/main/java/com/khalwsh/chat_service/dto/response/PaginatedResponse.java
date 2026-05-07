@@ -7,7 +7,6 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
-// generic paginated wrapper — works for channels, threads, messages, etc.
 @Data
 @Builder
 @NoArgsConstructor

@@ -6,23 +6,19 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.List;
 
-// covers both workspace channels (GROUP) and DMs (DIRECT)
+// dmKey uniqueness lives in MongoConfig — sparse: true would still index the explicit `null`
+// that Spring writes for GROUP channels, so a partialFilterExpression is the only correct option
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "channels")
-@CompoundIndexes({
-    @CompoundIndex(name = "idx_dmKey", def = "{'dmKey': 1}", unique = true, sparse = true)
-})
 public class Channel {
 
     @Id

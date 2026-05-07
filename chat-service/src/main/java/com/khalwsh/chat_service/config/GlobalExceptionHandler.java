@@ -17,21 +17,18 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // mongo down
     @ExceptionHandler(DataAccessResourceFailureException.class)
     public ResponseEntity<Map<String, Object>> handleMongoFailure(DataAccessResourceFailureException e) {
         log.error("MongoDB connection failure: {}", e.getMessage());
         return buildError(HttpStatus.SERVICE_UNAVAILABLE, "database temporarily unavailable");
     }
 
-    // redis down
     @ExceptionHandler(RedisConnectionFailureException.class)
     public ResponseEntity<Map<String, Object>> handleRedisFailure(RedisConnectionFailureException e) {
         log.error("Redis connection failure: {}", e.getMessage());
         return buildError(HttpStatus.SERVICE_UNAVAILABLE, "cache service temporarily unavailable");
     }
 
-    // @Valid failed
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException e) {
         String message = e.getBindingResult().getFieldErrors().stream()
@@ -41,19 +38,17 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.BAD_REQUEST, message);
     }
 
-    // bad ObjectId, etc.
+    // typical source: malformed ObjectId hex strings on path params
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException e) {
         return buildError(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
-    // already has a status, just forward it
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException e) {
         return buildError(HttpStatus.valueOf(e.getStatusCode().value()), e.getReason());
     }
 
-    // catch-all
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception e) {
         log.error("unhandled exception: {}", e.getMessage(), e);
@@ -61,9 +56,11 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<Map<String, Object>> buildError(HttpStatus status, String message) {
+        // Map.of rejects null values — defensively coalesce each field
+        String reason = status.getReasonPhrase();
         return ResponseEntity.status(status).body(Map.of(
                 "status", status.value(),
-                "error", status.getReasonPhrase(),
+                "error", reason != null ? reason : "Error",
                 "message", message != null ? message : "unknown error",
                 "timestamp", Instant.now().toString()
         ));
