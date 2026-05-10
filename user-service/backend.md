@@ -1,12 +1,12 @@
 # User Service — Backend Summary
 
-A complete walkthrough of every source file, configuration value, and runtime behavior currently in the `user-service` module.
+A complete walkthrough of every source file, configuration value, and runtime behavior currently in the `user-service` module. Everything below describes what is in the code today.
 
 ---
 
 ## 1. Purpose
 
-The User Service owns user identity and authentication for the Virtual Office platform. It runs on **port 8081**, persists users in **MySQL**, brings up **RabbitMQ** as a sidecar (not yet used by application code), and issues **JWTs** for authenticated sessions.
+The User Service owns user identity for the Virtual Office platform. It runs on **port 8081**, persists users in **MySQL**, brings up **RabbitMQ** as a sidecar, and exposes JWT-protected REST endpoints for registration, login, profile retrieval, password change, and profile-picture upload/download.
 
 ---
 
@@ -21,10 +21,9 @@ The User Service owns user identity and authentication for the Virtual Office pl
 | Database        | MySQL 8 (database `virtual_office`)                              |
 | HTTP            | `spring-boot-starter-web` (Servlet stack, embedded Tomcat)       |
 | Security        | `spring-boot-starter-security` + JWT (`io.jsonwebtoken:jjwt:0.11.5`) |
-| Messaging       | `spring-boot-starter-amqp` (RabbitMQ — present, no app code uses it yet) |
+| Messaging       | `spring-boot-starter-amqp` (RabbitMQ on the classpath; no producers/consumers in app code) |
 | Compose runtime | `spring-boot-docker-compose` (auto-launches MySQL + RabbitMQ)    |
 | Lombok          | `@Getter / @Setter / @Builder / @NoArgsConstructor / @AllArgsConstructor / @RequiredArgsConstructor` |
-| Shared code     | `com.virtualoffice:shared-library` Maven module                  |
 | Tests           | JUnit 5 via `spring-boot-starter-test`, `spring-security-test`   |
 
 ---
@@ -36,16 +35,18 @@ user-service/
 ├── pom.xml
 ├── README.md
 ├── docker-compose.yml
-├── mvnw / mvnw.cmd                       (Maven wrappers; .mvn lives at backend/)
-├── data/                                 (auto-created at runtime — MySQL + RabbitMQ volumes)
+├── mvnw / mvnw.cmd                      (Maven wrappers; .mvn lives at backend/)
+├── data/                                (auto-created at runtime — MySQL + RabbitMQ volumes)
 └── src/
     ├── main/
     │   ├── java/com/virtualoffice/service/user/
     │   │   ├── VirtualOfficeUserApplication.java        ← @SpringBootApplication entry
     │   │   ├── controller/
-    │   │   │   └── AuthController.java
+    │   │   │   ├── AuthController.java
+    │   │   │   └── UserController.java
     │   │   ├── service/
-    │   │   │   └── AuthService.java
+    │   │   │   ├── AuthService.java
+    │   │   │   └── UserService.java
     │   │   ├── repository/
     │   │   │   ├── UserRepository.java
     │   │   │   └── VerificationRequestRepository.java
@@ -57,12 +58,14 @@ user-service/
     │   │   ├── dto/
     │   │   │   ├── RegisterRequest.java
     │   │   │   ├── LoginRequest.java
-    │   │   │   └── AuthResponse.java
+    │   │   │   ├── UpdatePasswordRequest.java
+    │   │   │   ├── AuthResponse.java
+    │   │   │   └── ApiResponse.java
     │   │   └── domain/
     │   │       ├── entity/
     │   │       │   ├── User.java
     │   │       │   └── VerificationRequest.java
-    │   │       └── enumuration/                          ← (sic — package name is misspelled)
+    │   │       └── enumuration/                         ← (sic — package directory is misspelled)
     │   │           ├── AccountStatus.java
     │   │           └── VerificationRequestStatus.java
     │   └── resources/
@@ -72,30 +75,26 @@ user-service/
             └── VirtualOfficeUserApplicationTests.java   ← context-loads test only
 ```
 
-The package directory is named `enumuration` (sic) — the typo is consistent across imports, so the code compiles.
-
 ---
 
-## 4. Maven Dependencies ([pom.xml](pom.xml))
+## 4. Maven dependencies ([pom.xml](pom.xml))
 
-Direct dependencies declared by `user-service`:
+| Group : artifact                                                | Scope     |
+|------------------------------------------------------------------|-----------|
+| `org.springframework.boot:spring-boot-starter-amqp`             | compile   |
+| `org.springframework.boot:spring-boot-docker-compose`           | runtime   |
+| `org.springframework.boot:spring-boot-starter-data-jpa`         | compile   |
+| `org.springframework.boot:spring-boot-starter-security`         | compile   |
+| `org.springframework.boot:spring-boot-starter-web`              | compile   |
+| `io.jsonwebtoken:jjwt-api:0.11.5`                               | compile   |
+| `io.jsonwebtoken:jjwt-impl:0.11.5`                              | runtime   |
+| `io.jsonwebtoken:jjwt-jackson:0.11.5`                           | runtime   |
+| `org.projectlombok:lombok`                                      | compile (optional) |
+| `com.mysql:mysql-connector-j`                                   | runtime   |
+| `org.springframework.boot:spring-boot-starter-test`             | test      |
+| `org.springframework.security:spring-security-test`             | test      |
 
-| Group : artifact                                                | Scope     | Purpose                                              |
-|------------------------------------------------------------------|-----------|------------------------------------------------------|
-| `org.springframework.boot:spring-boot-starter-amqp`             | compile   | RabbitMQ client (not used by application code yet)   |
-| `org.springframework.boot:spring-boot-docker-compose`           | runtime   | Auto-runs `docker compose up` on boot                |
-| `org.springframework.boot:spring-boot-starter-data-jpa`         | compile   | JPA + Hibernate                                      |
-| `org.springframework.boot:spring-boot-starter-security`         | compile   | Spring Security 6.x                                  |
-| `org.springframework.boot:spring-boot-starter-web`              | compile   | Tomcat + MVC                                         |
-| `io.jsonwebtoken:jjwt-api:0.11.5`                               | compile   | JWT API                                              |
-| `io.jsonwebtoken:jjwt-impl:0.11.5`                              | runtime   | JWT impl                                             |
-| `io.jsonwebtoken:jjwt-jackson:0.11.5`                           | runtime   | JWT Jackson serializer                               |
-| `org.projectlombok:lombok`                                      | compile (optional) | Boilerplate generation                       |
-| `com.mysql:mysql-connector-j`                                   | runtime   | MySQL JDBC driver                                    |
-| `org.springframework.boot:spring-boot-starter-test`             | test      | JUnit 5, Mockito, AssertJ, MockMvc                   |
-| `org.springframework.security:spring-security-test`             | test      | `@WithMockUser`, etc.                                |
-
-The parent `backend/pom.xml` is Spring Boot **3.4.1** with Java **21** and `spring-cloud.version=2024.0.0`. The `shared-library` Maven module is referenced through the parent's dependency-management section (no direct `<dependency>` declared here today).
+The parent `backend/pom.xml` is Spring Boot **3.4.1** with Java **21** and `spring-cloud.version=2024.0.0`.
 
 ---
 
@@ -105,7 +104,7 @@ The parent `backend/pom.xml` is Spring Boot **3.4.1** with Java **21** and `spri
 server.port=8081
 spring.application.name=user-service
 
-# MySQL — auto-managed by docker-compose.yml at startup
+# MySQL — auto-managed by docker-compose.yml
 spring.datasource.url=jdbc:mysql://localhost:3306/virtual_office
 spring.datasource.username=root
 spring.datasource.password=rootpassword
@@ -115,7 +114,7 @@ spring.jpa.hibernate.ddl-auto=update
 spring.jpa.show-sql=true
 spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
 
-# RabbitMQ — auto-managed by docker-compose.yml at startup
+# RabbitMQ — auto-managed by docker-compose.yml
 spring.rabbitmq.host=localhost
 spring.rabbitmq.port=5672
 spring.rabbitmq.username=guest
@@ -129,11 +128,10 @@ jwt.secret=your-very-strong-secret-key-must-be-at-least-32-characters-long
 jwt.expiration=86400000
 ```
 
-Behavior:
-- `ddl-auto=update` — Hibernate auto-creates / updates tables on boot.
+- `ddl-auto=update` — Hibernate creates/updates tables on each boot.
 - `show-sql=true` — every SQL statement is logged.
 - `lifecycle-management=start-and-stop` — Spring Boot calls `docker compose up` at startup and `docker compose down` at shutdown.
-- `jwt.secret` and `jwt.expiration` are read by `JwtUtil`.
+- `jwt.secret` and `jwt.expiration` (ms) are read by `JwtUtil`.
 
 ---
 
@@ -176,13 +174,12 @@ networks:
     driver: bridge
 ```
 
-- **MySQL 8** on host port `3306`, root password `rootpassword`, default schema `virtual_office`. Persists to `./data/mysql`.
-- **RabbitMQ 3** with the management plugin on `5672` (AMQP) and `15672` (web UI), default `guest/guest`. Persists to `./data/rabbitmq`.
-- Containers are named `user-mysql` and `user-rabbitmq` and share the bridge network `user-network`.
+- **MySQL 8** on host `:3306`, root password `rootpassword`, default schema `virtual_office`. Persists to `./data/mysql`.
+- **RabbitMQ 3** with management plugin on `:5672` (AMQP) and `:15672` (web UI), default `guest/guest`. Persists to `./data/rabbitmq`.
 
 ---
 
-## 7. Application Entry Point
+## 7. Application entry point
 
 [`VirtualOfficeUserApplication`](src/main/java/com/virtualoffice/service/user/VirtualOfficeUserApplication.java)
 ```java
@@ -193,22 +190,22 @@ public class VirtualOfficeUserApplication {
     }
 }
 ```
-No additional `@EnableXxx` annotations — `@EnableJpaRepositories`, `@EnableWebSecurity`, `@EnableJpaAuditing`, etc. are either auto-configured by Spring Boot or applied on individual `@Configuration` classes (see `SecurityConfig`).
+No additional `@EnableXxx` annotations beyond what `@SpringBootApplication` and `@EnableWebSecurity` (on `SecurityConfig`) bring in.
 
 ---
 
-## 8. Domain Model
+## 8. Domain model
 
 ### 8.1 [`User`](src/main/java/com/virtualoffice/service/user/domain/entity/User.java)
 
 ```java
-@Entity
-@Table(name = "users")
+@Entity @Table(name = "users")
 @Getter @Setter @Builder
 @NoArgsConstructor @AllArgsConstructor
 public class User {
+
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private long id;
+    private Long id;
 
     @Column(name = "first_name",   nullable = false, length = 100)        private String firstName;
     @Column(name = "last_name",    nullable = false, length = 100)        private String lastName;
@@ -217,25 +214,36 @@ public class User {
     @Column(name = "phone_number",                  length = 20)          private String phoneNumber; // nullable
     @Column(name = "password_hash", nullable = false, length = 255)       private String password;
 
-    @Column(name = "account_status", nullable = false)
     @Enumerated(EnumType.STRING)
+    @Column(name = "account_status", nullable = false)
     private AccountStatus accountStatus = AccountStatus.ACTIVE;
 
-    @Column(name = "is_email_verified",        nullable = false)          private boolean isEmailVerified;
-    @Column(name = "is_phone_number_verified", nullable = false)          private boolean isPhoneVerified;
-    @Column(name = "is_disabled",              nullable = false)          private boolean isDisabled;
+    @Column(name = "is_email_verified", nullable = false)                 private boolean isEmailVerified;
+    @Column(name = "is_phone_verified", nullable = false)                 private boolean isPhoneVerified;
+    @Column(name = "is_disabled",       nullable = false)                 private boolean isDisabled;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<VerificationRequest> verificationRequests = new ArrayList<>();
+
+    @Column(name = "profile_picture", columnDefinition = "LONGBLOB")
+    private byte[] profilePicture;
+
+    @Column(name = "profile_picture_type")
+    private String profilePictureType;
 }
 ```
 
-- The Java field is `password`; the column is `password_hash`. Stored as a BCrypt hash.
 - `email` carries a unique index.
-- `accountStatus` defaults to `ACTIVE` at object construction; persisted as a string.
+- `password` field maps to column `password_hash` and stores a BCrypt hash.
+- `accountStatus` defaults to `ACTIVE`; persisted as the enum name (`STRING`).
+- `verificationRequests` cascades all operations and removes orphans.
+- `profilePicture` is a `LONGBLOB`; `profilePictureType` stores the original Content-Type.
 
 ### 8.2 [`VerificationRequest`](src/main/java/com/virtualoffice/service/user/domain/entity/VerificationRequest.java)
 
 ```java
-@Entity
-@Table(name = "verification_requests")
+@Entity @Table(name = "verification_requests")
 @Getter @Setter @Builder
 @NoArgsConstructor @AllArgsConstructor
 public class VerificationRequest {
@@ -250,8 +258,8 @@ public class VerificationRequest {
     @Column(name = "status", nullable = false)
     private VerificationRequestStatus status = VerificationRequestStatus.PENDING;
 
-    @Column(name = "created_at", nullable = false)  private LocalDateTime createdAt;
-    @Column(name = "expires_at", nullable = false)  private LocalDateTime expiresAt;
+    @Column(name = "created_at", nullable = false) private LocalDateTime createdAt;
+    @Column(name = "expires_at", nullable = false) private LocalDateTime expiresAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -259,49 +267,41 @@ public class VerificationRequest {
 }
 ```
 
-- `otp` is a string, max 10 chars (preserves leading zeros).
-- `status` is `PENDING` by default.
-- `user_id` foreign key is required and lazily fetched.
-- The entity is never written or read by application code today; only the table is created.
+The entity is mapped and its table is created by Hibernate, but no controller, service, or repository call writes or reads it today.
 
 ### 8.3 Enumerations
 
-[`AccountStatus`](src/main/java/com/virtualoffice/service/user/domain/enumuration/AccountStatus.java)
-```java
-public enum AccountStatus { ACTIVE, INACTIVE, PENDING_REPORT_REVIEW, SUSPENDED }
-```
+[`AccountStatus`](src/main/java/com/virtualoffice/service/user/domain/enumuration/AccountStatus.java) — `ACTIVE`, `INACTIVE`, `PENDING_REPORT_REVIEW`, `SUSPENDED`.
 
-[`VerificationRequestStatus`](src/main/java/com/virtualoffice/service/user/domain/enumuration/VerificationRequestStatus.java)
-```java
-public enum VerificationRequestStatus { PENDING, APPROVED }
-```
+[`VerificationRequestStatus`](src/main/java/com/virtualoffice/service/user/domain/enumuration/VerificationRequestStatus.java) — `PENDING`, `APPROVED`.
 
 ---
 
 ## 9. Repositories
 
-### 9.1 [`UserRepository`](src/main/java/com/virtualoffice/service/user/repository/UserRepository.java)
+### [`UserRepository`](src/main/java/com/virtualoffice/service/user/repository/UserRepository.java)
 ```java
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     boolean existsByEmail(String email);
 }
 ```
-Two derived queries: lookup by email and existence check.
 
-### 9.2 [`VerificationRequestRepository`](src/main/java/com/virtualoffice/service/user/repository/VerificationRequestRepository.java)
+### [`VerificationRequestRepository`](src/main/java/com/virtualoffice/service/user/repository/VerificationRequestRepository.java)
 ```java
 public interface VerificationRequestRepository extends JpaRepository<VerificationRequest, Long> {
     Optional<VerificationRequest> findByUserIdAndStatus(Long userId, VerificationRequestStatus status);
 }
 ```
-One derived query traversing the `user.id` association. Currently has no callers in application code.
+Has no callers in application code today.
 
 ---
 
 ## 10. DTOs
 
-### 10.1 [`RegisterRequest`](src/main/java/com/virtualoffice/service/user/dto/RegisterRequest.java)
+### Request DTOs
+
+[`RegisterRequest`](src/main/java/com/virtualoffice/service/user/dto/RegisterRequest.java)
 ```java
 @Getter @Setter
 public class RegisterRequest {
@@ -312,9 +312,8 @@ public class RegisterRequest {
     private String phoneNumber;
 }
 ```
-Plain DTO. **No bean-validation annotations** — values flow straight to the entity.
 
-### 10.2 [`LoginRequest`](src/main/java/com/virtualoffice/service/user/dto/LoginRequest.java)
+[`LoginRequest`](src/main/java/com/virtualoffice/service/user/dto/LoginRequest.java)
 ```java
 @Getter @Setter
 public class LoginRequest {
@@ -323,7 +322,20 @@ public class LoginRequest {
 }
 ```
 
-### 10.3 [`AuthResponse`](src/main/java/com/virtualoffice/service/user/dto/AuthResponse.java)
+[`UpdatePasswordRequest`](src/main/java/com/virtualoffice/service/user/dto/UpdatePasswordRequest.java)
+```java
+@Getter @Setter
+public class UpdatePasswordRequest {
+    private String oldPassword;
+    private String newPassword;
+}
+```
+
+None of the request DTOs use `@Valid` / Bean-Validation annotations.
+
+### Response DTOs
+
+[`AuthResponse`](src/main/java/com/virtualoffice/service/user/dto/AuthResponse.java)
 ```java
 @Getter @Setter @AllArgsConstructor @NoArgsConstructor
 public class AuthResponse {
@@ -336,9 +348,27 @@ public class AuthResponse {
     public static AuthResponse withError(String errorMessage) { /* sets only errorMessage */ }
 }
 ```
-- Always serialized as JSON in responses.
-- On success, `errorMessage` is the literal string `"None"`.
-- `withError(...)` creates an instance with everything `null` except `errorMessage`.
+
+[`ApiResponse`](src/main/java/com/virtualoffice/service/user/dto/ApiResponse.java)
+```java
+@Getter
+public class ApiResponse {
+    private String status;
+    private final Map<String, Object> fields = new LinkedHashMap<>();
+
+    public ApiResponse(String message) { this.status = message; }
+
+    public ApiResponse add(String key, Object value) {
+        fields.put(key, value);
+        return this;
+    }
+
+    @JsonAnyGetter
+    public Map<String, Object> getFields() { return fields; }
+}
+```
+
+`@JsonAnyGetter` flattens the `fields` map directly into the JSON object alongside `status` (e.g. `{ "status": "...", "id": 1, "email": "..." }`).
 
 ---
 
@@ -347,10 +377,8 @@ public class AuthResponse {
 ### 11.1 [`SecurityConfig`](src/main/java/com/virtualoffice/service/user/security/SecurityConfig.java)
 
 ```java
-@Configuration
-@EnableWebSecurity
+@Configuration @EnableWebSecurity
 public class SecurityConfig {
-
     @Bean SecurityFilterChain filterChain(HttpSecurity http) {
         http.csrf(csrf -> csrf.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(STATELESS))
@@ -369,41 +397,64 @@ public class SecurityConfig {
         return p;
     }
 
-    @Bean AuthenticationManager authenticationManager(AuthenticationConfiguration c) { return c.getAuthenticationManager(); }
+    @Bean AuthenticationManager authenticationManager(AuthenticationConfiguration c) {
+        return c.getAuthenticationManager();
+    }
 
     @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
 }
 ```
 
-Key behavior:
-- **CSRF disabled.**
-- **Stateless session policy** — no `JSESSIONID`, no server-side session.
+- CSRF disabled.
+- Stateless session policy — no `JSESSIONID`, no server-side session.
 - `/api/auth/**` is public; **everything else requires authentication**.
-- Authentication is delegated to a `DaoAuthenticationProvider` that uses `CustomUserDetailsService` and **BCrypt** for password matching.
-- The JWT filter runs **before** `UsernamePasswordAuthenticationFilter`.
+- `DaoAuthenticationProvider` uses `CustomUserDetailsService` and BCrypt.
+- `JwtAuthFilter` runs before `UsernamePasswordAuthenticationFilter`.
 
-### 11.2 [`JwtAuthFilter`](src/main/java/com/virtualoffice/service/user/security/JwtAuthFilter.java) (extends `OncePerRequestFilter`)
+### 11.2 [`JwtAuthFilter`](src/main/java/com/virtualoffice/service/user/security/JwtAuthFilter.java) (`extends OncePerRequestFilter`)
 
-- `shouldNotFilter` returns `true` for any path starting with `/api/auth/`, so register and login skip the filter entirely.
+- `shouldNotFilter` returns `true` for any request whose `getServletPath()` starts with `/api/auth/`.
 - For all other paths:
-  1. Reads `Authorization` header.
-  2. If missing or not starting with `Bearer `, the filter chain continues without setting authentication.
-  3. Otherwise extracts the token (drops `Bearer `), uses `JwtUtil.extractEmail` to get the email, looks the user up via `CustomUserDetailsService`, and if `JwtUtil.isTokenValid(...)` returns true, builds a `UsernamePasswordAuthenticationToken` and stores it on `SecurityContextHolder`.
-- The filter never explicitly writes a `401` / `403`. Rejection happens later in the authorization filter when no authentication is present.
+  1. Read `Authorization` header.
+  2. If missing or not starting with `Bearer `, the filter chain continues without authentication.
+  3. Otherwise extract the token (skip `"Bearer "`), call `jwtUtil.extractEmail(token)`.
+  4. If the email is non-null and the security context isn't already authenticated, load the user via `CustomUserDetailsService.loadUserByUsername(email)`.
+  5. If `jwtUtil.isTokenValid(token, userDetails)`, build a `UsernamePasswordAuthenticationToken` (with the user's authorities — empty list, see §11.4) and set it on `SecurityContextHolder`.
+- The filter never writes a response itself. Rejection happens in the authorization filter further down the chain.
 
 ### 11.3 [`JwtUtil`](src/main/java/com/virtualoffice/service/user/security/JwtUtil.java)
 
-- Reads `jwt.secret` and `jwt.expiration` (ms) from properties.
-- Signs with **HS256** using the secret bytes (UTF-8) via `Keys.hmacShaKeyFor`.
-- `generateToken(email)` builds a JWT with:
-  - `sub` = email
-  - `iat` = now
-  - `exp` = now + `expiration`
-- `extractEmail(token)` reads `sub`.
-- `isTokenValid(token, userDetails)` returns `true` only if the email in the token matches `userDetails.getUsername()` **and** the token is not expired.
-- `isTokenExpired` and `extractAllClaims` are private helpers using `Jwts.parserBuilder()` with the same signing key.
+```java
+@Component
+public class JwtUtil {
+    @Value("${jwt.secret}")     private String secret;
+    @Value("${jwt.expiration}") private long expiration;
 
-### 11.4 [`CustomUserDetailsService`](src/main/java/com/virtualoffice/service/user/security/CustomUserDetailsService.java) (implements `UserDetailsService`)
+    private Key getSigningKey() { return Keys.hmacShaKeyFor(secret.getBytes(UTF_8)); }
+
+    public String generateToken(String email) {
+        return Jwts.builder()
+                .setSubject(email)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + expiration))
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    public String extractEmail(String token) { return claims.getSubject(); }
+    public boolean isTokenValid(String token, UserDetails userDetails) {
+        return extractEmail(token).equals(userDetails.getUsername()) && !isTokenExpired(token);
+    }
+    private boolean isTokenExpired(String token)        { return claims.getExpiration().before(new Date()); }
+    private Claims  extractAllClaims(String token)      { ... Jwts.parserBuilder().setSigningKey(...).parseClaimsJws(token).getBody(); }
+}
+```
+
+- HS256, signed with `jwt.secret` UTF-8 bytes.
+- Token claims: `sub` (email), `iat`, `exp`.
+- Validation: signature parses, email matches `userDetails.getUsername()`, token not expired.
+
+### 11.4 [`CustomUserDetailsService`](src/main/java/com/virtualoffice/service/user/security/CustomUserDetailsService.java) (`implements UserDetailsService`)
 
 ```java
 public UserDetails loadUserByUsername(String email) {
@@ -425,111 +476,187 @@ public UserDetails loadUserByUsername(String email) {
 }
 ```
 
-- Disabled users are surfaced as `UsernameNotFoundException` (so login fails with a generic auth error).
-- `SUSPENDED` users are returned as `accountLocked`, which causes `DaoAuthenticationProvider` to reject login with `LockedException`.
-- The returned `UserDetails` has **no granted authorities / roles** — the constructed Spring Security `User` is built without calling `.authorities(...)`.
+- Disabled users surface as `UsernameNotFoundException`.
+- `SUSPENDED` users surface as account-locked (`DaoAuthenticationProvider` then throws `LockedException`).
+- The returned `UserDetails` has **no granted authorities** — `.authorities(...)` is never called.
 
 ---
 
-## 12. Service Layer
+## 12. Service layer
 
-### [`AuthService`](src/main/java/com/virtualoffice/service/user/service/AuthService.java)
+### 12.1 [`AuthService`](src/main/java/com/virtualoffice/service/user/service/AuthService.java)
 
 Constructor-injected: `UserRepository`, `PasswordEncoder`, `JwtUtil`, `AuthenticationManager`.
 
 `register(RegisterRequest request)`:
-1. If `userRepository.existsByEmail(request.getEmail())` → return `AuthResponse.withError("Such E-mail Already Exist")` (HTTP 200 with all other fields null).
-2. Build a `User` with `passwordEncoder.encode(request.getPassword())`, `accountStatus = ACTIVE`, the three boolean flags set to `false`.
+1. If `userRepository.existsByEmail(request.getEmail())` → return `AuthResponse.withError("Such E-mail Already Exist")`.
+2. Build a `User` with `passwordEncoder.encode(request.getPassword())`, `accountStatus = ACTIVE`, the three boolean flags `false`. (Note: `verificationRequests`, `profilePicture`, `profilePictureType` are not set by the builder here.)
 3. `userRepository.save(user)`.
 4. `String token = jwtUtil.generateToken(user.getEmail())`.
 5. Return `new AuthResponse(token, email, firstName, lastName, "None")`.
 
 `login(LoginRequest request)`:
-1. `authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, password))`. If credentials are wrong, the user is disabled, or the account is locked (suspended), this throws an `AuthenticationException`. There is no `try/catch`, so the exception propagates and Spring Security translates it to **`403 Forbidden`** with an empty body (since no exception handler is registered).
-2. If authentication succeeds, look up the user by email.
-   - If `null` (defensive — shouldn't happen because authentication just succeeded with that email), return `AuthResponse.withError("User Not Found")`.
-3. Generate a fresh JWT and return `new AuthResponse(token, email, firstName, lastName, "None")`.
+1. `authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, password))`. On failure (`BadCredentialsException`, `LockedException`, `DisabledException`, etc.), the exception propagates uncaught — Spring Security's default handler emits the response (typically `403 Forbidden`, empty body).
+2. Look up the user by email; if absent, return `AuthResponse.withError("User Not Found")`.
+3. Generate a JWT and return `new AuthResponse(token, email, firstName, lastName, "None")`.
+
+### 12.2 [`UserService`](src/main/java/com/virtualoffice/service/user/service/UserService.java)
+
+Constructor-injected: `UserRepository`, `PasswordEncoder`.
+
+`getCurrentUser()` (private):
+```java
+String email = SecurityContextHolder.getContext().getAuthentication().getName();
+return userRepository.findByEmail(email)
+    .orElseThrow(() -> new RuntimeException("User not found"));
+```
+
+`getUserData()` → `ResponseEntity<ApiResponse>`: 200 OK with an `ApiResponse("User retrieved")` augmented with `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `accountStatus`, `isEmailVerified`, `isPhoneVerified`.
+
+`uploadPhoto(MultipartFile file)` → `ResponseEntity<ApiResponse>`:
+1. If `file.getContentType()` is null or doesn't start with `image/` → 400 with `ApiResponse("Failed").add("Error", "Invalid Image")`.
+2. If `file.getSize() > 10 * (1 << 6)` (= 640 bytes) → 400 with `ApiResponse("Failed").add("Error", "Image size is too large")`. (The literal expression is `10 * (1 << 6)`; the source comment says "10MB" but the math evaluates to 640 bytes.)
+3. Set `user.profilePicture = file.getBytes()`. On `IOException` → 400 with `"Couldn't read the file"`.
+4. Set `user.profilePictureType = contentType`, save user, return 200 with `ApiResponse("succeeded")`.
+
+`updatePassword(UpdatePasswordRequest request)` → `ResponseEntity<ApiResponse>`:
+1. Load current user. If `passwordEncoder.matches(oldPassword, user.getPassword())` is `false` → 400 with `ApiResponse("Failed").add("Error", "Old password does not match")`.
+2. Otherwise set `user.password = passwordEncoder.encode(newPassword)`, save, return 200 with `ApiResponse("succeeded")`.
+
+`getCurrentUserProfile()` → returns the `User` entity directly (used by `UserController.getPhoto` to access `profilePicture` / `profilePictureType` byte arrays).
 
 ---
 
-## 13. Controller
+## 13. Controllers
 
-### [`AuthController`](src/main/java/com/virtualoffice/service/user/controller/AuthController.java)
+### 13.1 [`AuthController`](src/main/java/com/virtualoffice/service/user/controller/AuthController.java) — base path `/api/auth`
 
 ```java
-@RestController
-@RequestMapping("/api/auth")
-public class AuthController {
-
-    @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
-        return ResponseEntity.ok(authService.register(request));
+@PostMapping("/register")
+public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
+    AuthResponse r = authService.register(request);
+    if (!r.getErrorMessage().equals("None")) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(r);
     }
+    return ResponseEntity.ok(r);
+}
 
-    @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
-        return ResponseEntity.ok(authService.login(request));
+@PostMapping("/login")
+public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
+    AuthResponse r = authService.login(request);
+    if (!r.getErrorMessage().equals("None")) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(r);
     }
+    return ResponseEntity.ok(r);
 }
 ```
 
-- Both endpoints always return **`200 OK`** when the controller method itself completes.
-- No `@Valid` — DTO validation is not enforced.
-- No additional endpoints (no profile, no logout, no refresh, no verification routes).
+- Both methods return `200 OK` when the service produces `errorMessage = "None"`.
+- Otherwise return `403 Forbidden` with the `AuthResponse` body.
+- No `@Valid` annotations.
+
+### 13.2 [`UserController`](src/main/java/com/virtualoffice/service/user/controller/UserController.java) — base path `/api/users`
+
+```java
+@GetMapping("/me")
+public ResponseEntity<ApiResponse> getMe() { return userService.getUserData(); }
+
+@PutMapping("/me/password")
+public ResponseEntity<ApiResponse> updatePassword(@RequestBody UpdatePasswordRequest request) {
+    return userService.updatePassword(request);
+}
+
+@PostMapping("/me/photo")
+public ResponseEntity<ApiResponse> uploadPhoto(@RequestParam("file") MultipartFile file) {
+    return userService.uploadPhoto(file);
+}
+
+@GetMapping("/me/photo")
+public ResponseEntity<byte[]> getPhoto() {
+    User user = userService.getCurrentUserProfile();
+    if (user.getProfilePicture() == null) return ResponseEntity.notFound().build();
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(user.getProfilePictureType()))
+        .body(user.getProfilePicture());
+}
+```
+
+- All four endpoints require an authenticated request (no `permitAll` for `/api/users/**`).
+- `GET /me/photo` returns the raw byte array with `Content-Type` set from `profilePictureType`, or `404 Not Found` (empty body) when no picture is stored.
 
 ---
 
-## 14. Request / Response Flow
+## 14. Endpoint summary
 
-### Register
+| Method | Path | Auth | Body in | Body out (success) | Failure status / body |
+|---|---|---|---|---|---|
+| POST | `/api/auth/register` | public | `RegisterRequest` | 200 `AuthResponse(errorMessage="None")` | 403 `AuthResponse(errorMessage="Such E-mail Already Exist")` |
+| POST | `/api/auth/login` | public | `LoginRequest` | 200 `AuthResponse(errorMessage="None")` | 403 `AuthResponse(errorMessage="User Not Found")` (defensive); 403 empty body when `authenticationManager` throws |
+| GET | `/api/users/me` | Bearer JWT | — | 200 `ApiResponse` with profile fields | 403 empty (no token) |
+| PUT | `/api/users/me/password` | Bearer JWT | `UpdatePasswordRequest` | 200 `ApiResponse(status="succeeded")` | 400 `ApiResponse(status="Failed", Error="Old password does not match")` |
+| POST | `/api/users/me/photo` | Bearer JWT | multipart `file` | 200 `ApiResponse(status="succeeded")` | 400 `ApiResponse(status="Failed", Error="Invalid Image" \| "Image size is too large" \| "Couldn't read the file")` |
+| GET | `/api/users/me/photo` | Bearer JWT | — | 200 raw bytes, `Content-Type` from `profilePictureType` | 404 empty (no picture stored) |
+
+---
+
+## 15. Request / response flow
+
+### Register (success)
 ```
 POST /api/auth/register
-  → SecurityFilterChain: JwtAuthFilter.shouldNotFilter == true (path starts /api/auth/)
-  → AuthorizationFilter: /api/auth/** is permitAll
-  → AuthController.register
-  → AuthService.register
-       existsByEmail? yes → return AuthResponse.withError("Such E-mail Already Exist") [200]
-                       no  → save user, generate JWT, return AuthResponse(token, ...) [200]
+ → JwtAuthFilter.shouldNotFilter == true (path /api/auth/**)
+ → AuthorizationFilter: permitAll
+ → AuthController.register
+ → AuthService.register
+     existsByEmail? no → save user, generateToken, return AuthResponse(...)
+ → 200 AuthResponse
+```
+
+### Register (duplicate email)
+```
+POST /api/auth/register
+ → AuthService.register → existsByEmail? yes → AuthResponse.withError("Such E-mail Already Exist")
+ → AuthController returns 403 with the same body
 ```
 
 ### Login (success)
 ```
 POST /api/auth/login
-  → JwtAuthFilter skipped
-  → AuthService.login
-       authenticationManager.authenticate(...)            ← BCrypt match against users.password_hash
-       userRepository.findByEmail(...)
-       jwtUtil.generateToken(email)
-       return AuthResponse(token, ...) [200]
+ → AuthService.login
+     authenticationManager.authenticate(...)        ← BCrypt match against users.password_hash
+     userRepository.findByEmail(...)
+     jwtUtil.generateToken(email)
+     return AuthResponse(...)
+ → 200 AuthResponse
 ```
 
 ### Login (bad credentials / disabled / suspended)
 ```
 POST /api/auth/login
-  → AuthService.login
-       authenticationManager.authenticate(...) throws AuthenticationException
-       no exception handler → Spring Security default handler
-       → 403 Forbidden, empty body
+ → AuthService.login
+     authenticationManager.authenticate(...) throws AuthenticationException
+ → uncaught (no @RestControllerAdvice) → Spring Security default handler → 403 empty
 ```
 
-### Any other authenticated route
+### Authenticated request
 ```
-GET /something
-  → JwtAuthFilter
-       no Authorization header → context not authenticated
-       Authorization: Bearer <jwt>
-            extractEmail → loadUserByUsername → isTokenValid
-            if all good: SecurityContextHolder.setAuthentication(...)
-  → AuthorizationFilter: anyRequest().authenticated()
-       authenticated → controller
-       not authenticated → 403 Forbidden
+GET /api/users/me
+ → JwtAuthFilter
+     no Authorization header → context unauthenticated
+     "Bearer <jwt>"
+       extractEmail → loadUserByUsername → isTokenValid
+       if valid → SecurityContextHolder.setAuthentication(...)
+ → AuthorizationFilter: anyRequest().authenticated()
+     authenticated → controller; not authenticated → 403 empty
+ → UserController.getMe → UserService.getUserData
+     SecurityContextHolder.getContext().getAuthentication().getName() → email
+     userRepository.findByEmail(email) → ApiResponse with profile fields
+ → 200 ApiResponse
 ```
 
 ---
 
-## 15. Database Schema (effective)
-
-With `ddl-auto=update`, Hibernate generates roughly:
+## 16. Database schema (effective, generated by Hibernate)
 
 ```sql
 CREATE TABLE users (
@@ -541,8 +668,10 @@ CREATE TABLE users (
     password_hash            VARCHAR(255) NOT NULL,
     account_status           VARCHAR(255) NOT NULL,        -- enum stored as STRING
     is_email_verified        BIT NOT NULL,
-    is_phone_number_verified BIT NOT NULL,
+    is_phone_verified        BIT NOT NULL,
     is_disabled              BIT NOT NULL,
+    profile_picture          LONGBLOB,
+    profile_picture_type     VARCHAR(255),
     PRIMARY KEY (id)
 );
 
@@ -562,7 +691,7 @@ CREATE TABLE verification_requests (
 
 ---
 
-## 16. Tests
+## 17. Tests
 
 [`VirtualOfficeUserApplicationTests`](src/test/java/com/virtualoffice/service/user/VirtualOfficeUserApplicationTests.java)
 ```java
@@ -572,9 +701,7 @@ class VirtualOfficeUserApplicationTests {
 }
 ```
 
-A single `contextLoads()` test. `@SpringBootTest` boots the full application context, which means the test requires:
-- A reachable MySQL on `localhost:3306` (provided by Docker Compose if running).
-- A reachable RabbitMQ on `localhost:5672`.
+`@SpringBootTest` boots the full application context, requiring a reachable MySQL on `localhost:3306` and RabbitMQ on `localhost:5672` (provided by Docker Compose when running).
 
 Run from the repo:
 ```bash
@@ -583,7 +710,7 @@ Run from the repo:
 
 ---
 
-## 17. How to Run
+## 18. How to run
 
 ```bash
 # Linux / macOS
@@ -599,11 +726,11 @@ cd backend
 
 Spring Boot runs `docker compose up` for `user-service/docker-compose.yml`, waits until MySQL and RabbitMQ are healthy, runs Hibernate's schema update, then starts Tomcat on `:8081`. Ctrl+C runs `docker compose down`.
 
-Port 3306 (MySQL) and 5672/15672 (RabbitMQ) must be free on the host or the container start fails.
+Port 3306 (MySQL) and 5672/15672 (RabbitMQ) must be free on the host or container start fails.
 
 ---
 
-## 18. Quick Reference
+## 19. Quick reference
 
 ```
 Port              : 8081
@@ -613,14 +740,17 @@ DB                : MySQL 8 — jdbc:mysql://localhost:3306/virtual_office (root
 Broker            : RabbitMQ 3 — localhost:5672 (guest / guest), management UI :15672
 Entry point       : com.virtualoffice.service.user.VirtualOfficeUserApplication
 Entities          : User, VerificationRequest
-Enums             : AccountStatus  { ACTIVE, INACTIVE, PENDING_REPORT_REVIEW, SUSPENDED }
+Enums             : AccountStatus { ACTIVE, INACTIVE, PENDING_REPORT_REVIEW, SUSPENDED }
                     VerificationRequestStatus { PENDING, APPROVED }
 Repositories      : UserRepository (findByEmail, existsByEmail)
                     VerificationRequestRepository (findByUserIdAndStatus)  [unused]
-DTOs              : RegisterRequest, LoginRequest, AuthResponse
-Security          : Stateless, CSRF off, BCrypt, JWT HS256 (24h)
-Public endpoints  : POST /api/auth/register
-                    POST /api/auth/login
-Authenticated     : everything else (none implemented)
+DTOs (in)         : RegisterRequest, LoginRequest, UpdatePasswordRequest
+DTOs (out)        : AuthResponse, ApiResponse (dynamic, @JsonAnyGetter)
+Security          : Stateless, CSRF off, BCrypt, JWT HS256 (24 h), no roles
+Public endpoints  : POST /api/auth/register, POST /api/auth/login
+Authenticated     : GET  /api/users/me
+                    PUT  /api/users/me/password
+                    POST /api/users/me/photo   (multipart "file", image/*, ≤ 640 bytes)
+                    GET  /api/users/me/photo
 Tests             : 1 (contextLoads)
 ```

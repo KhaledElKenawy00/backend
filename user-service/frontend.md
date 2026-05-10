@@ -26,72 +26,65 @@ cd backend
 ```
 
 What happens automatically:
-1. Spring Boot reads [`docker-compose.yml`](docker-compose.yml), runs `docker compose up`, and waits for MySQL + RabbitMQ to be healthy.
+1. Spring Boot reads [`docker-compose.yml`](docker-compose.yml), runs `docker compose up`, waits until MySQL and RabbitMQ are healthy.
 2. Hibernate creates/updates the `users` and `verification_requests` tables on first boot (`ddl-auto=update`).
 3. Tomcat listens on **`http://localhost:8081`**.
 4. **Ctrl+C** → Spring Boot runs `docker compose down` automatically (`spring.docker.compose.lifecycle-management=start-and-stop`).
 
 ### Caveats
-- **Port 3306 must be free.** If a local MySQL Windows service is running, the Docker container can't bind to it. Stop it once from an elevated PowerShell:
+- **Port 3306 must be free.** A locally installed MySQL Windows service will block the container from binding. From an elevated PowerShell:
   ```powershell
   Stop-Service MySQL80 -Force
   Set-Service MySQL80 -StartupType Manual
   ```
-  Same applies to RabbitMQ on `:5672` and `:15672` if a local install owns those ports.
-- **Docker Desktop must already be running** before you run `mvnw spring-boot:run`.
-- The compose file persists data under `user-service/data/mysql` and `user-service/data/rabbitmq`. Delete those folders to reset to a clean DB.
+- **Docker Desktop must already be running** before `mvnw spring-boot:run`.
+- Persistent data lives under `user-service/data/mysql` and `user-service/data/rabbitmq`. Delete those folders to reset.
 
 ---
 
-## 2. Service URL and ports
+## 2. URLs and ports
 
 | Item | Value |
 |---|---|
 | Base URL (local) | `http://localhost:8081` |
-| Auth base path | `/api/auth` |
-| MySQL (host) | `localhost:3306`, user `root` / password `rootpassword`, database `virtual_office` |
+| Auth endpoints | `/api/auth/**` (public) |
+| User endpoints | `/api/users/**` (require JWT) |
+| MySQL | `localhost:3306`, `root` / `rootpassword`, db `virtual_office` |
 | RabbitMQ AMQP | `localhost:5672` (`guest` / `guest`) |
 | RabbitMQ management UI | `http://localhost:15672` |
 
 ---
 
-## 3. Authentication model
+## 3. Authentication
 
-The User Service is the source of truth for authentication. It accepts email + password, hashes passwords with **BCrypt**, and issues a **JWT** signed with **HS256** containing the user's email as the subject. Token TTL is **24 hours** (`jwt.expiration=86400000` ms).
+### How the backend verifies you
+- The User Service issues **JWTs (HS256)** signed with `jwt.secret`. The token's `sub` claim is the user's email; `iat` and `exp` are present; **no other claims**. TTL is 24 hours (`jwt.expiration=86400000` ms).
+- For every request **outside** `/api/auth/**`:
+  1. Spring runs `JwtAuthFilter` first.
+  2. The filter reads the `Authorization` header. If it's missing or doesn't start with `Bearer `, the filter does nothing.
+  3. Otherwise it strips the `Bearer ` prefix, extracts the email from the token, loads the user by email, validates the token (signature + email match + not expired), and authenticates the request.
+  4. After the filter, Spring Security's authorization rule (`anyRequest().authenticated()`) responds **`403 Forbidden`** with empty body when no authentication is present on the context.
+- The session is **stateless** — no cookies, every request must carry the token in `Authorization: Bearer <jwt>`.
+- **CSRF is disabled.**
 
-### How requests are authorized
-- Endpoints under `/api/auth/**` are **public** (`permitAll`).
-- Every other endpoint requires a valid JWT in the `Authorization: Bearer <token>` header.
-- The service is **stateless** — no session cookies. Every request must carry the token.
-- CSRF protection is disabled.
-
-### How the JWT filter works ([`JwtAuthFilter`](src/main/java/com/virtualoffice/service/user/security/JwtAuthFilter.java))
-1. Skips entirely for any path starting with `/api/auth/`.
-2. For every other path: reads the `Authorization` header.
-3. If the header is missing or doesn't start with `Bearer `, the request continues unauthenticated (and Spring Security will then return `403`).
-4. If the header is present, the filter:
-   - Strips the `Bearer ` prefix.
-   - Extracts the email (`sub` claim) from the token.
-   - Loads the user from MySQL by that email.
-   - Verifies the token (signature, expiration, email matches the user).
-   - Sets a `UsernamePasswordAuthenticationToken` on the `SecurityContext` so downstream code sees the request as authenticated.
-
-### Account status checks at login ([`CustomUserDetailsService`](src/main/java/com/virtualoffice/service/user/security/CustomUserDetailsService.java))
-- `isDisabled = true` → login is rejected (translated to a `UsernameNotFoundException`).
-- `accountStatus = SUSPENDED` → login is rejected as **account locked**.
-- All other statuses (`ACTIVE`, `INACTIVE`, `PENDING_REPORT_REVIEW`) currently allow login as far as Spring Security is concerned.
+### Account-status checks during login
+([`CustomUserDetailsService`](src/main/java/com/virtualoffice/service/user/security/CustomUserDetailsService.java))
+- `isDisabled = true` → login fails (treated as `UsernameNotFoundException`).
+- `accountStatus = SUSPENDED` → login fails (Spring marks the account as locked).
+- `ACTIVE`, `INACTIVE`, `PENDING_REPORT_REVIEW` are treated as logable-in.
+- The returned `UserDetails` has **no granted authorities/roles**.
 
 ---
 
-## 4. REST API
+## 4. Public endpoints — `/api/auth/**`
 
-All endpoints below are implemented in [`AuthController`](src/main/java/com/virtualoffice/service/user/controller/AuthController.java).
+These two endpoints are accepted without a token. Both are implemented in [`AuthController`](src/main/java/com/virtualoffice/service/user/controller/AuthController.java).
 
-### 4.1 Register
-```
-POST /api/auth/register
-Content-Type: application/json
-```
+The controller looks at `AuthResponse.errorMessage`:
+- `"None"` → returns **`200 OK`**.
+- anything else → returns **`403 Forbidden`** with the same JSON body.
+
+### 4.1 `POST /api/auth/register`
 
 **Request body** (`RegisterRequest`):
 ```json
@@ -103,18 +96,11 @@ Content-Type: application/json
   "phoneNumber": "+1-555-0100"
 }
 ```
+- The DTO has no validation annotations — fields are passed through to the entity.
+- Entity column constraints: `firstName` and `lastName` ≤ 100 chars and required; `email` ≤ 100, required, **unique**; `password` required; `phoneNumber` ≤ 20, optional.
+- New users are created with `accountStatus = ACTIVE`, `isEmailVerified = false`, `isPhoneVerified = false`, `isDisabled = false`. Password is BCrypt-hashed before storage.
 
-All five fields are accepted by the DTO. `phoneNumber` may be omitted (the column is nullable in the DB). There is **no bean-validation (`@Valid`)** wired up on the controller — the values you send are passed straight through to the entity, with these column constraints (a violation throws a server-side error):
-
-| Field         | Constraints                                      |
-|---------------|--------------------------------------------------|
-| `firstName`   | required, max 100 chars                          |
-| `lastName`    | required, max 100 chars                          |
-| `email`       | required, max 100 chars, **unique**              |
-| `password`    | required, hashed before storage (BCrypt)         |
-| `phoneNumber` | optional, max 20 chars                           |
-
-**On success — `200 OK`** (`AuthResponse`):
+**Response body** (`AuthResponse`):
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiJ9....",
@@ -125,71 +111,120 @@ All five fields are accepted by the DTO. `phoneNumber` may be omitted (the colum
 }
 ```
 
-**On duplicate email — `200 OK`** (note: still 200, not 409):
-```json
-{
-  "token": null,
-  "email": null,
-  "firstName": null,
-  "lastName": null,
-  "errorMessage": "Such E-mail Already Exist"
-}
-```
+| Outcome | HTTP | `errorMessage` | Other fields |
+|---|---|---|---|
+| Success | `200` | `"None"` | populated |
+| Email already in use | `403` | `"Such E-mail Already Exist"` | all `null` |
 
-> The frontend **must** check `errorMessage` to detect duplicate-email failures — the HTTP status alone does not distinguish success from failure here.
-
-User defaults applied at registration:
-- `accountStatus = ACTIVE`
-- `isEmailVerified = false`
-- `isPhoneVerified = false`
-- `isDisabled = false`
-
-### 4.2 Login
-```
-POST /api/auth/login
-Content-Type: application/json
-```
+### 4.2 `POST /api/auth/login`
 
 **Request body** (`LoginRequest`):
 ```json
-{
-  "email": "jane@example.com",
-  "password": "hello12345"
-}
+{ "email": "jane@example.com", "password": "hello12345" }
 ```
 
-**On success — `200 OK`** (`AuthResponse`, same shape as register):
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9....",
-  "email": "jane@example.com",
-  "firstName": "Jane",
-  "lastName": "Doe",
-  "errorMessage": "None"
-}
-```
+**Response body** is the same `AuthResponse` shape as register.
 
-**Failure modes:**
-- **Wrong password / unknown email / disabled account / suspended account** → Spring Security throws an authentication exception. There is no global exception handler in the codebase, so the response is the framework default — typically **`403 Forbidden`** with an empty body.
-- **Sending an empty body `{}` or missing fields** → also surfaces as `403`.
-
-> So login distinguishes "OK" (`200` with token) from "everything else" (`403` empty body). There is no machine-readable error message for failed logins today.
-
-### 4.3 No other endpoints
-
-The codebase contains no other controllers. There are no:
-- `GET /api/users/me` or other profile endpoints
-- Email/phone verification endpoints (the `VerificationRequest` entity exists but isn't exposed via HTTP)
-- Logout / token refresh endpoints
-- Admin endpoints
-- `/actuator/**` is present (Actuator is on the classpath through Spring Boot defaults) but **all actuator paths return `403`** because they are not in the `permitAll` list.
+| Outcome | HTTP | `errorMessage` | Body |
+|---|---|---|---|
+| Success | `200` | `"None"` | full `AuthResponse` |
+| Defensive branch — auth passed but `userRepository.findByEmail` returned empty | `403` | `"User Not Found"` | other fields `null` |
+| Wrong password / disabled user / suspended user / unknown email | — | — | `authenticationManager.authenticate` throws an `AuthenticationException`. There is **no** `@RestControllerAdvice` in the codebase, so Spring Security's default behavior produces an empty-body response (typically `403 Forbidden`). |
 
 ---
 
-## 5. Data Shapes
+## 5. Authenticated endpoints — `/api/users/**`
 
-### `RegisterRequest`
+All routes below require `Authorization: Bearer <jwt>`. Without it Spring returns **`403 Forbidden`** with an empty body. They are implemented in [`UserController`](src/main/java/com/virtualoffice/service/user/controller/UserController.java) and back onto [`UserService`](src/main/java/com/virtualoffice/service/user/service/UserService.java).
+
+The "current user" is resolved as:
+```java
+SecurityContextHolder.getContext().getAuthentication().getName()  // -> email
+userRepository.findByEmail(email).orElseThrow(new RuntimeException("User not found"))
+```
+A failure here propagates as an unhandled `RuntimeException` (no exception handler is registered).
+
+### 5.1 `GET /api/users/me`
+
+Returns the current user's profile.
+
+**Response `200 OK`** (`ApiResponse`, dynamic JSON):
+```json
+{
+  "status": "User retrieved",
+  "id": 1,
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane@example.com",
+  "phoneNumber": "+1-555-0100",
+  "accountStatus": "ACTIVE",
+  "isEmailVerified": false,
+  "isPhoneVerified": false
+}
+```
+
+`accountStatus` is one of `ACTIVE`, `INACTIVE`, `PENDING_REPORT_REVIEW`, `SUSPENDED`.
+`isDisabled` and the user's `password`, `profilePicture`, `verificationRequests` are **not** included.
+
+### 5.2 `PUT /api/users/me/password`
+
+Changes the current user's password. The old password is verified against the stored BCrypt hash; the new password is BCrypt-hashed and saved.
+
+**Request body** (`UpdatePasswordRequest`):
+```json
+{ "oldPassword": "hello12345", "newPassword": "newP4ssw0rd" }
+```
+
+**Responses** (both bodies use `ApiResponse`):
+
+| Outcome | HTTP | Body |
+|---|---|---|
+| Success | `200` | `{ "status": "succeeded" }` |
+| Old password does not match | `400` | `{ "status": "Failed", "Error": "Old password does not match" }` |
+
+### 5.3 `POST /api/users/me/photo`
+
+Uploads a profile picture for the current user. Stored as a `LONGBLOB` in the `users` table along with the original Content-Type.
+
+**Request**: `multipart/form-data` with a single part named `file`.
+
+```
+POST /api/users/me/photo
+Content-Type: multipart/form-data; boundary=...
+
+<binary image bytes under field "file">
+```
+
+Validation performed by `UserService.uploadPhoto`:
+- The part's `Content-Type` must start with `image/`.
+- The file's `getSize()` must be **≤ `10 * (1 << 6)` = 640 bytes** (this is the literal expression in the code).
+
+**Responses** (`ApiResponse`):
+
+| Outcome | HTTP | Body |
+|---|---|---|
+| Success | `200` | `{ "status": "succeeded" }` |
+| Content-Type missing or doesn't start with `image/` | `400` | `{ "status": "Failed", "Error": "Invalid Image" }` |
+| File size > 640 bytes | `400` | `{ "status": "Failed", "Error": "Image size is too large" }` |
+| `IOException` while reading the file | `400` | `{ "status": "Failed", "Error": "Couldn't read the file" }` |
+
+### 5.4 `GET /api/users/me/photo`
+
+Returns the raw bytes of the current user's profile picture.
+
+| Outcome | HTTP | Body |
+|---|---|---|
+| Picture stored | `200`, `Content-Type` = the stored `profilePictureType` | raw image bytes |
+| `profilePicture` is `null` | `404` | empty |
+
+---
+
+## 6. Data Shapes
+
+### Request DTOs
+
 ```ts
+// RegisterRequest
 {
   firstName: string;
   lastName: string;
@@ -197,94 +232,131 @@ The codebase contains no other controllers. There are no:
   password: string;
   phoneNumber?: string;
 }
-```
 
-### `LoginRequest`
-```ts
+// LoginRequest
 {
   email: string;
   password: string;
 }
-```
 
-### `AuthResponse`
-```ts
+// UpdatePasswordRequest
 {
-  token: string | null;        // JWT (HS256), null on error
-  email: string | null;
-  firstName: string | null;
-  lastName: string | null;
-  errorMessage: string;        // "None" on success, otherwise an error label
+  oldPassword: string;
+  newPassword: string;
 }
 ```
 
-`errorMessage` values currently produced by the backend:
-- `"None"` — success
-- `"Such E-mail Already Exist"` — duplicate email on register
-- `"User Not Found"` — login passed authentication but user lookup returned null (defensive branch; in practice you will hit `403` first)
+### Response DTOs
+
+```ts
+// AuthResponse (returned by /api/auth/register and /api/auth/login)
+{
+  token: string | null;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  errorMessage: string;          // "None" on success, otherwise an error label
+}
+```
+
+`AuthResponse.errorMessage` strings produced by the backend:
+- `"None"` — success.
+- `"Such E-mail Already Exist"` — register, duplicate email (HTTP 403).
+- `"User Not Found"` — login, defensive branch (HTTP 403).
+
+```ts
+// ApiResponse (returned by all /api/users/** endpoints that return JSON)
+{
+  status: string;                // free-form label
+  // ...arbitrary additional keys (flattened via @JsonAnyGetter)
+}
+```
+
+The `add(key, value)` calls inside services determine the additional fields. Examples produced today:
+- `GET /me` → `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `accountStatus`, `isEmailVerified`, `isPhoneVerified`.
+- Any failure path (`status: "Failed"`) → adds an `"Error"` key with a human-readable string.
 
 ---
 
-## 6. JWT details (what's inside the token)
+## 7. JWT details
 
 A token returned by register/login decodes to:
 - Header: `{ "alg": "HS256" }`
 - Payload:
   - `sub` — the user's email
   - `iat` — issued-at (seconds since epoch)
-  - `exp` — expiration (seconds since epoch, 24 h after `iat`)
-- Signature: HMAC-SHA256 over the secret in `application.properties` (`jwt.secret`).
+  - `exp` — `iat` + 24 h
+- Signature: HMAC-SHA256 using `jwt.secret` (UTF-8 bytes).
 
-The token does **not** carry the user's id, role, name, or any claim other than the email.
+The token does **not** carry the user id, role, name, or any other claim besides the email.
 
 ---
 
-## 7. Frontend integration recipe
+## 8. End-to-end frontend recipe
 
 ```ts
-// 1. Register
-const reg = await fetch("http://localhost:8081/api/auth/register", {
+const BASE = "http://localhost:8081";
+
+// Register
+const reg = await fetch(`${BASE}/api/auth/register`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    firstName: "Jane",
-    lastName: "Doe",
-    email: "jane@example.com",
-    password: "hello12345"
+    firstName: "Jane", lastName: "Doe",
+    email: "jane@example.com", password: "hello12345"
   })
 }).then(r => r.json());
-
 if (reg.errorMessage !== "None") throw new Error(reg.errorMessage);
-const token = reg.token;
 
-// 2. Login (same shape)
-const lg = await fetch("http://localhost:8081/api/auth/login", {
+// Login
+const lg = await fetch(`${BASE}/api/auth/login`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ email: "jane@example.com", password: "hello12345" })
 });
-if (lg.status !== 200) throw new Error("login failed");   // empty 403 on bad creds
-const { token: jwt } = await lg.json();
+if (lg.status !== 200) throw new Error("login failed");
+const { token } = await lg.json();
 
-// 3. Call any future protected endpoint
-await fetch("http://localhost:8081/some/protected/path", {
-  headers: { "Authorization": `Bearer ${jwt}` }
+const auth = { "Authorization": `Bearer ${token}` };
+
+// Me
+const me = await fetch(`${BASE}/api/users/me`, { headers: auth }).then(r => r.json());
+
+// Update password
+await fetch(`${BASE}/api/users/me/password`, {
+  method: "PUT",
+  headers: { ...auth, "Content-Type": "application/json" },
+  body: JSON.stringify({ oldPassword: "hello12345", newPassword: "newP4ssw0rd" })
 });
+
+// Upload photo (must be ≤ 640 bytes per current server validation)
+const fd = new FormData();
+fd.append("file", fileBlob);  // image/* mime
+await fetch(`${BASE}/api/users/me/photo`, { method: "POST", headers: auth, body: fd });
+
+// Read photo
+const photo = await fetch(`${BASE}/api/users/me/photo`, { headers: auth });
+if (photo.status === 200) {
+  const blob = await photo.blob();   // Content-Type comes from server
+}
 ```
 
 ---
 
-## 8. Quick reference
+## 9. Quick reference
 
 ```
-Base URL              http://localhost:8081
-Public endpoints      POST /api/auth/register          -> 200 AuthResponse (check errorMessage)
-                      POST /api/auth/login             -> 200 AuthResponse on success, 403 otherwise
-Authenticated paths   anything else (none implemented yet)
-                      requires header: Authorization: Bearer <jwt>
-JWT                   HS256, sub=email, 24 h TTL
-Password storage      BCrypt
-DB                    MySQL 8, db=virtual_office, table=users  (auto-created via JPA)
-                      MySQL 8, table=verification_requests     (auto-created via JPA, unused at HTTP layer)
-Message broker        RabbitMQ 3 (started via docker-compose, no producers/consumers wired)
+Base URL        http://localhost:8081
+
+Public          POST /api/auth/register          -> 200 AuthResponse / 403 AuthResponse(errorMessage)
+                POST /api/auth/login             -> 200 AuthResponse / 403 (empty or AuthResponse)
+
+Authenticated   GET  /api/users/me               -> 200 ApiResponse with profile fields
+(Bearer JWT)    PUT  /api/users/me/password      -> 200 / 400 ApiResponse
+                POST /api/users/me/photo         -> 200 / 400 ApiResponse  (multipart "file", image/* , ≤ 640 bytes)
+                GET  /api/users/me/photo         -> 200 raw bytes (Content-Type=stored type) / 404 empty
+
+JWT             HS256, sub=email, 24 h TTL
+Password        BCrypt
+Account flags   accountStatus, isEmailVerified, isPhoneVerified, isDisabled
 ```
