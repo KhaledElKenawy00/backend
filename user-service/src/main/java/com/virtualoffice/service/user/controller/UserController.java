@@ -19,10 +19,12 @@ public class UserController {
 
     private final UserService userService;
 
+    @PutMapping("/me/password")
     public ResponseEntity<ApiResponse> updatePassword(
             @RequestBody UpdatePasswordRequest request) {
         return userService.updatePassword(request);
     }
+
     @GetMapping("/me")
     public ResponseEntity<ApiResponse> getMe() {
         return userService.getUserData();
