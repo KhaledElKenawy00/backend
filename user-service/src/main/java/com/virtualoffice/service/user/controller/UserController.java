@@ -2,6 +2,7 @@ package com.virtualoffice.service.user.controller;
 
 import com.virtualoffice.service.user.domain.entity.User;
 import com.virtualoffice.service.user.dto.ApiResponse;
+import com.virtualoffice.service.user.dto.UpdatePasswordRequest;
 import com.virtualoffice.service.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -18,6 +19,10 @@ public class UserController {
 
     private final UserService userService;
 
+    public ResponseEntity<ApiResponse> updatePassword(
+            @RequestBody UpdatePasswordRequest request) {
+        return userService.updatePassword(request);
+    }
     @GetMapping("/me")
     public ResponseEntity<ApiResponse> getMe() {
         return userService.getUserData();
