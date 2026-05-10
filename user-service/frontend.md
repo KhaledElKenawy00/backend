@@ -1,212 +1,290 @@
 # User Service — Frontend Integration Guide
 
-> **Status**: this service is currently a **skeleton**. Only the JPA data model and Spring Boot scaffolding exist in code. **No REST endpoints have been implemented yet.** Every section below describes what is *currently in the codebase*; anything labelled _planned_ is implied by the README ("Key Features") but not yet wired up. Treat this document as the integration contract a frontend dev can rely on **today**, plus the data shapes you will be reading/writing once endpoints land.
+A complete reference for integrating a frontend with the User Service. Everything below describes what is currently in the code.
 
 ---
 
-## 1. What the service is for
-
-The User Service is responsible for user identities, profiles, and authentication in the Virtual Office platform. The README lists three "Key Features":
-
-- User Registration and Login
-- Profile Management
-- Authentication & Authorization (Security)
-
-In the broader microservice topology (see [`backend/README.md`](../README.md)), this is the only service that owns user identity. Other services (Chat, Desk, etc.) treat user IDs as foreign keys and call User Service for lookups.
-
----
-
-## 2. How to run it locally
+## 1. Running the service locally
 
 ### Prerequisites
-- **JDK 21**
-- **Maven** (or use `mvnw` from the repo root)
-- **MySQL 8** running locally with a database called `virtual_office`
+- **JDK 21** with `JAVA_HOME` pointing at it
+- **Docker** installed and running (Docker Desktop on Windows / macOS)
 
-### Configuration ([src/main/resources/application.properties](src/main/resources/application.properties))
-```properties
-server.port=8081
-spring.application.name=user-service
+Nothing else is needed locally — MySQL and RabbitMQ are launched automatically by Spring Boot's `spring-boot-docker-compose` integration using `user-service/docker-compose.yml`.
 
-spring.datasource.url=jdbc:mysql://localhost:3306/virtual_office
-spring.datasource.username=root
-spring.datasource.password=your_password   # ← change before running
-
-spring.jpa.hibernate.ddl-auto=update       # Hibernate auto-creates/updates tables
-spring.jpa.show-sql=true
-spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
-```
-
-> ⚠️ Replace `your_password` with the actual MySQL root password before launching.
-
-### Start the service
+### Start
 ```bash
-# from the user-service directory
-./mvnw spring-boot:run        # Linux / macOS
-mvnw.cmd spring-boot:run      # Windows
+# Linux / macOS
+export JAVA_HOME=/path/to/jdk21
+cd backend
+./mvnw -pl user-service spring-boot:run
+
+# Windows (PowerShell)
+$env:JAVA_HOME = "C:\path\to\jdk21"
+cd backend
+.\mvnw.cmd -pl user-service spring-boot:run
 ```
 
-Service comes up on **`http://localhost:8081`**.
+What happens automatically:
+1. Spring Boot reads [`docker-compose.yml`](docker-compose.yml), runs `docker compose up`, and waits for MySQL + RabbitMQ to be healthy.
+2. Hibernate creates/updates the `users` and `verification_requests` tables on first boot (`ddl-auto=update`).
+3. Tomcat listens on **`http://localhost:8081`**.
+4. **Ctrl+C** → Spring Boot runs `docker compose down` automatically (`spring.docker.compose.lifecycle-management=start-and-stop`).
 
-In the deployed topology, all client traffic goes through the **Gateway API** on port `8080`, which forwards to the User Service. For local frontend dev you can call `:8081` directly until the Gateway is configured.
+### Caveats
+- **Port 3306 must be free.** If a local MySQL Windows service is running, the Docker container can't bind to it. Stop it once from an elevated PowerShell:
+  ```powershell
+  Stop-Service MySQL80 -Force
+  Set-Service MySQL80 -StartupType Manual
+  ```
+  Same applies to RabbitMQ on `:5672` and `:15672` if a local install owns those ports.
+- **Docker Desktop must already be running** before you run `mvnw spring-boot:run`.
+- The compose file persists data under `user-service/data/mysql` and `user-service/data/rabbitmq`. Delete those folders to reset to a clean DB.
 
 ---
 
-## 3. Authentication model (where this service sits)
+## 2. Service URL and ports
 
-According to the cross-service architecture documented in `chat-service/chat-service-arc.md`, the **User Service is the source of truth for JWT validation**. The expected flow is:
+| Item | Value |
+|---|---|
+| Base URL (local) | `http://localhost:8081` |
+| Auth base path | `/api/auth` |
+| MySQL (host) | `localhost:3306`, user `root` / password `rootpassword`, database `virtual_office` |
+| RabbitMQ AMQP | `localhost:5672` (`guest` / `guest`) |
+| RabbitMQ management UI | `http://localhost:15672` |
 
-1. Client sends `Authorization: Bearer <JWT>` to any service (via Nginx/Gateway).
-2. Gateway calls `User Service` with the token.
-3. User Service responds 200 with headers `X-User-Id`, `X-User-Email`, `X-User-Role`, OR 401 if invalid.
-4. Other services trust those forwarded headers and never parse JWTs themselves.
+---
 
-> ⚠️ The endpoint that performs that validation (`GET /api/auth/validate` in the design docs) **does not exist in code yet** — it is the next thing to build. Once it exists, the frontend will only ever talk to login/register/profile endpoints directly; everything else will be authenticated transparently by the gateway.
+## 3. Authentication model
+
+The User Service is the source of truth for authentication. It accepts email + password, hashes passwords with **BCrypt**, and issues a **JWT** signed with **HS256** containing the user's email as the subject. Token TTL is **24 hours** (`jwt.expiration=86400000` ms).
+
+### How requests are authorized
+- Endpoints under `/api/auth/**` are **public** (`permitAll`).
+- Every other endpoint requires a valid JWT in the `Authorization: Bearer <token>` header.
+- The service is **stateless** — no session cookies. Every request must carry the token.
+- CSRF protection is disabled.
+
+### How the JWT filter works ([`JwtAuthFilter`](src/main/java/com/virtualoffice/service/user/security/JwtAuthFilter.java))
+1. Skips entirely for any path starting with `/api/auth/`.
+2. For every other path: reads the `Authorization` header.
+3. If the header is missing or doesn't start with `Bearer `, the request continues unauthenticated (and Spring Security will then return `403`).
+4. If the header is present, the filter:
+   - Strips the `Bearer ` prefix.
+   - Extracts the email (`sub` claim) from the token.
+   - Loads the user from MySQL by that email.
+   - Verifies the token (signature, expiration, email matches the user).
+   - Sets a `UsernamePasswordAuthenticationToken` on the `SecurityContext` so downstream code sees the request as authenticated.
+
+### Account status checks at login ([`CustomUserDetailsService`](src/main/java/com/virtualoffice/service/user/security/CustomUserDetailsService.java))
+- `isDisabled = true` → login is rejected (translated to a `UsernameNotFoundException`).
+- `accountStatus = SUSPENDED` → login is rejected as **account locked**.
+- All other statuses (`ACTIVE`, `INACTIVE`, `PENDING_REPORT_REVIEW`) currently allow login as far as Spring Security is concerned.
 
 ---
 
 ## 4. REST API
 
-**There are currently no REST endpoints implemented.** The repository contains:
-- `VirtualOfficeUserApplication.java` — `@SpringBootApplication` entry point, nothing else
-- 2 JPA entities (`User`, `VerificationRequests`)
-- 2 enums (`AccountStatus`, `VerificationRequestStatus`)
+All endpoints below are implemented in [`AuthController`](src/main/java/com/virtualoffice/service/user/controller/AuthController.java).
 
-When endpoints do land, the conventional base path will be `/api/auth/**` and `/api/users/**` (matching the gateway pattern other services use). Until then, every HTTP call to this service returns `404`.
-
-### Planned endpoints (inferred from data model + README)
-
-These are not yet implemented — listing them here so the frontend can stub against them:
-
-| Method | Path                            | Purpose                                                |
-|--------|---------------------------------|--------------------------------------------------------|
-| POST   | `/api/auth/register`            | Create a new user                                      |
-| POST   | `/api/auth/login`               | Issue a JWT                                            |
-| GET    | `/api/auth/validate`            | Validate a JWT, return user identity (used by Gateway) |
-| POST   | `/api/auth/verify-email`        | Submit email OTP                                       |
-| POST   | `/api/auth/verify-phone`        | Submit phone OTP                                       |
-| GET    | `/api/users/me`                 | Get my profile                                         |
-| PUT    | `/api/users/me`                 | Update my profile                                      |
-
-**Do not assume these shapes are final.** Coordinate with the backend dev once they're being implemented.
-
----
-
-## 5. Data Model (what you will be reading / writing)
-
-These are the shapes that exist in code today as JPA entities. When DTOs are added, they will most likely mirror these but redact `password` and add metadata.
-
-### 5.1 `User` ([User.java](src/main/java/com/virtualoffice/service/user/domain/entity/User.java))
-
-| Field              | Type             | Column                     | Constraints                        |
-|--------------------|------------------|----------------------------|------------------------------------|
-| `id`               | `long`           | `id` (auto-increment PK)   | identity-generated                 |
-| `firstName`        | `String`         | `first_name`               | not null, max 100 chars            |
-| `lastName`         | `String`         | `last_name`                | not null, max 100 chars            |
-| `email`            | `String`         | `email`                    | not null, max 100, **unique**      |
-| `phoneNumber`      | `String`         | `phone_number`             | nullable, max 20 chars             |
-| `password`         | `String`         | `password_hash`            | not null, max 255 (stored hashed)  |
-| `accountStatus`    | `AccountStatus`  | `account_status`           | not null, enum stored as STRING; default `ACTIVE` |
-| `isEmailVerified`  | `boolean`        | `is_email_verified`        | not null                           |
-| `isPhoneVerified`  | `boolean`        | `is_phone_number_verified` | not null                           |
-| `isDisabled`       | `boolean`        | `is_disabled`              | not null                           |
-
-> The DB column is `password_hash` (the field is just named `password` in Java) — passwords are intended to be stored as hashes, never plaintext. The frontend never receives this field.
-
-#### `AccountStatus` enum
+### 4.1 Register
 ```
-ACTIVE                  // normal, can log in
-INACTIVE                // self-deactivated or expired
-PENDING_REPORT_REVIEW   // user is under moderation review
-SUSPENDED               // banned by an admin
+POST /api/auth/register
+Content-Type: application/json
 ```
 
-#### Likely `UserResponse` shape (when DTOs land)
+**Request body** (`RegisterRequest`):
 ```json
 {
-  "id": 42,
   "firstName": "Jane",
   "lastName": "Doe",
   "email": "jane@example.com",
-  "phoneNumber": "+1-555-0100",
-  "accountStatus": "ACTIVE",
-  "isEmailVerified": true,
-  "isPhoneVerified": false,
-  "isDisabled": false
+  "password": "hello12345",
+  "phoneNumber": "+1-555-0100"
 }
 ```
 
-### 5.2 `VerificationRequests` ([VerificationRequests.java](src/main/java/com/virtualoffice/service/user/domain/entity/VerificationRequests.java))
+All five fields are accepted by the DTO. `phoneNumber` may be omitted (the column is nullable in the DB). There is **no bean-validation (`@Valid`)** wired up on the controller — the values you send are passed straight through to the entity, with these column constraints (a violation throws a server-side error):
 
-A barebones OTP record — currently only contains:
+| Field         | Constraints                                      |
+|---------------|--------------------------------------------------|
+| `firstName`   | required, max 100 chars                          |
+| `lastName`    | required, max 100 chars                          |
+| `email`       | required, max 100 chars, **unique**              |
+| `password`    | required, hashed before storage (BCrypt)         |
+| `phoneNumber` | optional, max 20 chars                           |
 
-| Field | Type   | Notes                              |
-|-------|--------|------------------------------------|
-| `id`  | `long` | identity-generated PK              |
-| `OTP` | `long` | the one-time code (column `otp`)   |
-
-> Heads up: this entity is missing a foreign key to `User`, an expiry timestamp, a status (the `VerificationRequestStatus` enum exists but isn't referenced), and a "purpose" field (email vs phone). It will almost certainly grow before any verification endpoint ships. Don't model your frontend strictly around this shape today.
-
-#### `VerificationRequestStatus` enum
+**On success — `200 OK`** (`AuthResponse`):
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiJ9....",
+  "email": "jane@example.com",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "errorMessage": "None"
+}
 ```
-PENDING
-APPROVED
+
+**On duplicate email — `200 OK`** (note: still 200, not 409):
+```json
+{
+  "token": null,
+  "email": null,
+  "firstName": null,
+  "lastName": null,
+  "errorMessage": "Such E-mail Already Exist"
+}
+```
+
+> The frontend **must** check `errorMessage` to detect duplicate-email failures — the HTTP status alone does not distinguish success from failure here.
+
+User defaults applied at registration:
+- `accountStatus = ACTIVE`
+- `isEmailVerified = false`
+- `isPhoneVerified = false`
+- `isDisabled = false`
+
+### 4.2 Login
+```
+POST /api/auth/login
+Content-Type: application/json
+```
+
+**Request body** (`LoginRequest`):
+```json
+{
+  "email": "jane@example.com",
+  "password": "hello12345"
+}
+```
+
+**On success — `200 OK`** (`AuthResponse`, same shape as register):
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiJ9....",
+  "email": "jane@example.com",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "errorMessage": "None"
+}
+```
+
+**Failure modes:**
+- **Wrong password / unknown email / disabled account / suspended account** → Spring Security throws an authentication exception. There is no global exception handler in the codebase, so the response is the framework default — typically **`403 Forbidden`** with an empty body.
+- **Sending an empty body `{}` or missing fields** → also surfaces as `403`.
+
+> So login distinguishes "OK" (`200` with token) from "everything else" (`403` empty body). There is no machine-readable error message for failed logins today.
+
+### 4.3 No other endpoints
+
+The codebase contains no other controllers. There are no:
+- `GET /api/users/me` or other profile endpoints
+- Email/phone verification endpoints (the `VerificationRequest` entity exists but isn't exposed via HTTP)
+- Logout / token refresh endpoints
+- Admin endpoints
+- `/actuator/**` is present (Actuator is on the classpath through Spring Boot defaults) but **all actuator paths return `403`** because they are not in the `permitAll` list.
+
+---
+
+## 5. Data Shapes
+
+### `RegisterRequest`
+```ts
+{
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  phoneNumber?: string;
+}
+```
+
+### `LoginRequest`
+```ts
+{
+  email: string;
+  password: string;
+}
+```
+
+### `AuthResponse`
+```ts
+{
+  token: string | null;        // JWT (HS256), null on error
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  errorMessage: string;        // "None" on success, otherwise an error label
+}
+```
+
+`errorMessage` values currently produced by the backend:
+- `"None"` — success
+- `"Such E-mail Already Exist"` — duplicate email on register
+- `"User Not Found"` — login passed authentication but user lookup returned null (defensive branch; in practice you will hit `403` first)
+
+---
+
+## 6. JWT details (what's inside the token)
+
+A token returned by register/login decodes to:
+- Header: `{ "alg": "HS256" }`
+- Payload:
+  - `sub` — the user's email
+  - `iat` — issued-at (seconds since epoch)
+  - `exp` — expiration (seconds since epoch, 24 h after `iat`)
+- Signature: HMAC-SHA256 over the secret in `application.properties` (`jwt.secret`).
+
+The token does **not** carry the user's id, role, name, or any claim other than the email.
+
+---
+
+## 7. Frontend integration recipe
+
+```ts
+// 1. Register
+const reg = await fetch("http://localhost:8081/api/auth/register", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    firstName: "Jane",
+    lastName: "Doe",
+    email: "jane@example.com",
+    password: "hello12345"
+  })
+}).then(r => r.json());
+
+if (reg.errorMessage !== "None") throw new Error(reg.errorMessage);
+const token = reg.token;
+
+// 2. Login (same shape)
+const lg = await fetch("http://localhost:8081/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "jane@example.com", password: "hello12345" })
+});
+if (lg.status !== 200) throw new Error("login failed");   // empty 403 on bad creds
+const { token: jwt } = await lg.json();
+
+// 3. Call any future protected endpoint
+await fetch("http://localhost:8081/some/protected/path", {
+  headers: { "Authorization": `Bearer ${jwt}` }
+});
 ```
 
 ---
 
-## 6. Frontend integration contract — what to do *today*
-
-Because no endpoints exist yet, here's what a frontend developer can do right now:
-
-1. **Stub the auth flow.** Mock POST `/api/auth/login` returning a fake JWT and POST `/api/auth/register` returning a `UserResponse` (use the shape in §5.1). When the real endpoints land, swap out the mock URLs.
-2. **Build forms against the entity validation rules.** firstName/lastName ≤ 100, email ≤ 100 unique, phoneNumber ≤ 20 optional, password (whatever client-side rule you choose; the backend stores a hash up to 255).
-3. **Treat email as the login identifier.** It's the only naturally unique non-PK column.
-4. **Plan for two verification flows** — email and phone — even though only OTP storage exists today.
-5. **Don't store the JWT in `localStorage` long-term** — once login is wired, prefer `httpOnly` cookies set by the backend. The architecture documents elsewhere assume the gateway forwards `Authorization: Bearer ...`.
-6. **Account status handling.** Even before endpoints exist, design UI states for: account locked (`SUSPENDED`), under review (`PENDING_REPORT_REVIEW`), self-disabled (`isDisabled`). The Login screen should distinguish "wrong password" from "account suspended" once the backend differentiates.
-
----
-
-## 7. Sequence the frontend can assume (once implemented)
+## 8. Quick reference
 
 ```
-[Register]
-  POST /api/auth/register   { firstName, lastName, email, phoneNumber?, password }
-    → 201 Created
-    → server creates User (accountStatus=ACTIVE, isEmailVerified=false, ...)
-    → server creates VerificationRequests row, sends OTP via email
-
-[Verify email]
-  POST /api/auth/verify-email   { email, otp }
-    → 200 OK
-    → user.isEmailVerified = true
-
-[Login]
-  POST /api/auth/login   { email, password }
-    → 200 OK   { token, user }   (or sets httpOnly cookie)
-    → 401 if password mismatch
-    → 423 / 403 if accountStatus != ACTIVE  (suggested mapping)
-
-[Profile]
-  GET /api/users/me                 (auth required)
-    → 200 OK   UserResponse
-  PUT /api/users/me   { firstName?, lastName?, phoneNumber? }
-    → 200 OK   updated UserResponse
+Base URL              http://localhost:8081
+Public endpoints      POST /api/auth/register          -> 200 AuthResponse (check errorMessage)
+                      POST /api/auth/login             -> 200 AuthResponse on success, 403 otherwise
+Authenticated paths   anything else (none implemented yet)
+                      requires header: Authorization: Bearer <jwt>
+JWT                   HS256, sub=email, 24 h TTL
+Password storage      BCrypt
+DB                    MySQL 8, db=virtual_office, table=users  (auto-created via JPA)
+                      MySQL 8, table=verification_requests     (auto-created via JPA, unused at HTTP layer)
+Message broker        RabbitMQ 3 (started via docker-compose, no producers/consumers wired)
 ```
-
-This is the *intended* flow per the README; the frontend dev should agree on exact request/response shapes with the backend dev before merging real integrations.
-
----
-
-## 8. Known gaps / questions to ask backend before wiring
-
-- Where does the JWT signing key live? Env var or config?
-- Will registration auto-issue a JWT or require email verification first?
-- What's the OTP delivery channel for phone verification — SMS gateway, RabbitMQ event to Notification Service?
-- The pom includes `spring-boot-starter-amqp` (RabbitMQ) — what events will User Service publish? (`user.created`, `user.email-verified`, …?)
-- How will roles (`USER` vs `ADMIN`) be modeled? There is **no role field on the User entity** today.
-- What's the password complexity policy?
-- Is `phoneNumber` required at registration or only when the user opts into phone verification?
-
-Treat the answers as gating questions before the frontend ships any production user flow.
