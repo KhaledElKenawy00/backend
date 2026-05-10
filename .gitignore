@@ -39,3 +39,4 @@ chat-service/implementation-steps.txt
 
 *.claude
 */data/*
+*/.data
