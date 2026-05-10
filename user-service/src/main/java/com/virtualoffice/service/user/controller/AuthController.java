@@ -25,6 +25,10 @@ public class AuthController {
     // Post instead of Get for security
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
-        return ResponseEntity.ok(authService.login(request));
+        AuthResponse authResponse = authService.login(request);
+        if (!authResponse.getErrorMessage().equals("None")) {
+            return ResponseEntity.badRequest().body(authResponse);
+        }
+        return ResponseEntity.ok(authResponse);
     }
 }
