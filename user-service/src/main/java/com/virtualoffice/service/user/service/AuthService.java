@@ -10,13 +10,13 @@ import com.virtualoffice.service.user.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
-
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
@@ -26,7 +26,7 @@ public class AuthService {
 
         // Check if email is already taken
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already in use: " + request.getEmail());
+            return AuthResponse.withError("Such E-mail Already Exist");
         }
 
         // Build and save the new user
@@ -48,7 +48,7 @@ public class AuthService {
         String token = jwtUtil.generateToken(user.getEmail());
 
         // Return the token
-        return new AuthResponse(token, user.getEmail(), user.getFirstName(), user.getLastName());
+        return new AuthResponse(token, user.getEmail(), user.getFirstName(), user.getLastName(), "None");
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -62,10 +62,13 @@ public class AuthService {
         );
 
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElse(null);
+        if (user == null) {
+            return AuthResponse.withError("User Not Found");
+        }
 
         String token = jwtUtil.generateToken(user.getEmail());
 
-        return new AuthResponse(token, user.getEmail(), user.getFirstName(), user.getLastName());
+        return new AuthResponse(token, user.getEmail(), user.getFirstName(), user.getLastName(), "None");
     }
 }

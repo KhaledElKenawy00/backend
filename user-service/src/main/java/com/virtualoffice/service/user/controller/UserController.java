@@ -1,0 +1,44 @@
+package com.virtualoffice.service.user.controller;
+
+import com.virtualoffice.service.user.domain.entity.User;
+import com.virtualoffice.service.user.dto.ApiResponse;
+import com.virtualoffice.service.user.service.UserService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+
+@RestController
+@RequestMapping("/api/users")
+@RequiredArgsConstructor
+public class UserController {
+
+    private final UserService userService;
+
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponse> getMe() {
+        return userService.getUserData();
+    }
+
+    @PostMapping("/me/photo")
+    public ResponseEntity<ApiResponse> uploadPhoto(@RequestParam("file") MultipartFile file) {
+        return userService.uploadPhoto(file);
+    }
+
+    @GetMapping("/me/photo")
+    public ResponseEntity<byte[]> getPhoto() {
+        User user = userService.getCurrentUserProfile();
+
+        if (user.getProfilePicture() == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(user.getProfilePictureType()))
+                .body(user.getProfilePicture());
+    }
+
+}
