@@ -54,8 +54,8 @@ public class UserService {
             );
         }
 
-        // Maximum size Must be 10MB -> 10 * 2^6
-        if (file.getSize() > 10 * (1 << 6)) {
+        // Maximum size Must be 10MB -> 10 * 2^(20)
+        if (file.getSize() > 10 * (1 << 20)) {
             return ResponseEntity.badRequest().body(
                     new ApiResponse("Failed")
                     .add("Error", "Image size is too large")
