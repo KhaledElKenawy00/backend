@@ -1,6 +1,9 @@
 package com.khalwsh.notifications.messaging;
 
+import com.khalwsh.notifications.dto.NotificationResponse;
 import com.khalwsh.notifications.service.EmailDispatchService;
+import com.khalwsh.notifications.service.InAppNotificationService;
+import com.khalwsh.notifications.service.NotificationPushService;
 import com.khalwsh.notifications.template.EmailTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,14 +20,14 @@ import java.util.Map;
 public class NotificationListener {
 
     private final EmailDispatchService emailDispatchService;
+    private final InAppNotificationService inAppNotificationService;
+    private final NotificationPushService notificationPushService;
 
     @RabbitListener(queues = "${notifications.queue}")
     public void handle(NotificationEvent event) {
         switch (event.getType()) {
             case SIGNUP_SUCCESS, LOGIN_SUCCESS, OTP, PASSWORD_RESET_SUCCESS -> handleEmail(event);
-            case TASK_ASSIGNED -> {
-                // stub — wired in Phase 3 (Step 18)
-            }
+            case TASK_ASSIGNED -> handleInApp(event);
         }
     }
 
@@ -39,6 +42,22 @@ public class NotificationListener {
                 EmailTemplate.fromType(event.getType()),
                 to,
                 stringifyPayload(event.getPayload()));
+    }
+
+    /**
+     * In-app branch: persist to Mongo first (durable), then best-effort push
+     * over WebSocket. If the user has no open WS session, the push is silently
+     * dropped — they'll see the notification on next inbox load.
+     *
+     * If the event is a redelivery of one we've already stored (same eventId),
+     * createFromEvent returns Optional.empty() and we skip the push too —
+     * otherwise the user would get two STOMP frames for the same notification.
+     */
+    private void handleInApp(NotificationEvent event) {
+        inAppNotificationService.createFromEvent(event)
+                .ifPresent(saved -> notificationPushService.push(
+                        saved.getUserId(),
+                        NotificationResponse.from(saved)));
     }
 
     /**
