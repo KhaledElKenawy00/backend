@@ -28,11 +28,9 @@ public class InAppNotificationService {
     private final NotificationRepository repository;
     private final MongoTemplate mongoTemplate;
 
-    /**
-     * Builds a Notification from an event payload and saves it. Returns
-     * Optional.empty() if the event was already persisted (duplicate eventId),
-     * which makes redelivery a no-op.
-     */
+    // Returns Optional.empty when the event was already persisted under the
+    // same eventId, so callers can detect redelivery and skip side effects
+    // (e.g. WebSocket push) for it.
     public Optional<Notification> createFromEvent(NotificationEvent event) {
         Map<String, Object> payload = event.getPayload() != null ? event.getPayload() : Map.of();
 
@@ -82,11 +80,8 @@ public class InAppNotificationService {
         return repository.countByUserIdAndReadFalse(userId);
     }
 
-    /**
-     * Returns true if the notification existed (and is now read), false if
-     * it doesn't exist or belongs to another user. Cross-user access is
-     * indistinguishable from "not found" — no information leak.
-     */
+    // Cross-user access is indistinguishable from "not found" so we never
+    // leak existence of another user's notification.
     public boolean markRead(String id, Long userId) {
         return repository.findByIdAndUserId(id, userId)
                 .map(n -> {
@@ -100,10 +95,7 @@ public class InAppNotificationService {
                 .orElse(false);
     }
 
-    /**
-     * Bulk-update via MongoTemplate — single Mongo round trip rather than
-     * fetch-then-save-each. Returns the number of documents that flipped.
-     */
+    // Single bulk-update round trip rather than fetch-then-save-each.
     public long markAllRead(Long userId) {
         Query query = new Query(
                 Criteria.where("userId").is(userId)
@@ -126,14 +118,15 @@ public class InAppNotificationService {
                 .orElse(false);
     }
 
-    /* ---- payload helpers — payload values arrive as Object on the wire ---- */
-
     private Long readLong(Map<String, Object> map, String key) {
         Object v = map.get(key);
         if (v == null) return null;
         if (v instanceof Number n) return n.longValue();
         if (v instanceof String s) {
-            try { return Long.parseLong(s.trim()); } catch (NumberFormatException ignored) {}
+            try {
+                return Long.parseLong(s.trim());
+            } catch (NumberFormatException ignored) {
+            }
         }
         return null;
     }

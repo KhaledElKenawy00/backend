@@ -2,6 +2,7 @@ package com.khalwsh.notifications.messaging;
 
 import com.khalwsh.notifications.dto.NotificationResponse;
 import com.khalwsh.notifications.service.EmailDispatchService;
+import com.khalwsh.notifications.service.EmailIdempotencyService;
 import com.khalwsh.notifications.service.InAppNotificationService;
 import com.khalwsh.notifications.service.NotificationPushService;
 import com.khalwsh.notifications.template.EmailTemplate;
@@ -20,6 +21,7 @@ import java.util.Map;
 public class NotificationListener {
 
     private final EmailDispatchService emailDispatchService;
+    private final EmailIdempotencyService emailIdempotencyService;
     private final InAppNotificationService inAppNotificationService;
     private final NotificationPushService notificationPushService;
 
@@ -32,27 +34,39 @@ public class NotificationListener {
     }
 
     private void handleEmail(NotificationEvent event) {
+        // Dedup must happen BEFORE the recipient check so a duplicate event
+        // without a recipient (malformed redelivery) doesn't burn the retry
+        // budget. But it must happen AFTER successful dispatch, not before -
+        // otherwise a transient SMTP failure on attempt 1 claims the key
+        // and attempts 2..5 silently no-op without ever retrying the send.
+        if (!emailIdempotencyService.tryClaim(event.getEventId())) {
+            log.debug("Email event {} already processed, skipping", event.getEventId());
+            return;
+        }
+
         Object recipient = event.getPayload() != null ? event.getPayload().get("email") : null;
         if (!(recipient instanceof String to) || to.isBlank()) {
             log.error("Missing 'email' in payload for {} event {}", event.getType(), event.getEventId());
             throw new AmqpRejectAndDontRequeueException("missing recipient email");
         }
 
-        emailDispatchService.dispatch(
-                EmailTemplate.fromType(event.getType()),
-                to,
-                stringifyPayload(event.getPayload()));
+        try {
+            emailDispatchService.dispatch(
+                    EmailTemplate.fromType(event.getType()),
+                    to,
+                    stringifyPayload(event.getPayload()));
+        } catch (RuntimeException e) {
+            // Dispatch failed; release the claim so Spring AMQP's retry actually
+            // gets a chance to re-attempt the SMTP send. Without this, attempt
+            // 1's claim would block attempts 2..5.
+            emailIdempotencyService.release(event.getEventId());
+            throw e;
+        }
     }
 
-    /**
-     * In-app branch: persist to Mongo first (durable), then best-effort push
-     * over WebSocket. If the user has no open WS session, the push is silently
-     * dropped — they'll see the notification on next inbox load.
-     *
-     * If the event is a redelivery of one we've already stored (same eventId),
-     * createFromEvent returns Optional.empty() and we skip the push too —
-     * otherwise the user would get two STOMP frames for the same notification.
-     */
+    // Mongo insert is durable; the WebSocket push is best-effort. If the user
+    // is offline, the push silently drops. Duplicate redeliveries skip both
+    // (createFromEvent returns empty on a known eventId).
     private void handleInApp(NotificationEvent event) {
         inAppNotificationService.createFromEvent(event)
                 .ifPresent(saved -> notificationPushService.push(
@@ -60,13 +74,14 @@ public class NotificationListener {
                         NotificationResponse.from(saved)));
     }
 
-    /**
-     * The renderer expects Map<String, String> for placeholder substitution.
-     * Payload values arrive as Object on the wire (ints, instants, ...), so we
-     * stringify them here. Null values become empty strings.
-     */
+    // The renderer expects Map<String, String>; payload values arrive as Object
+    // on the wire (ints, instants, ...). Defensive against a null payload even
+    // though handleEmail's recipient check guards against that today.
     private Map<String, String> stringifyPayload(Map<String, Object> payload) {
         Map<String, String> out = new HashMap<>();
+        if (payload == null) {
+            return out;
+        }
         for (Map.Entry<String, Object> e : payload.entrySet()) {
             out.put(e.getKey(), e.getValue() == null ? "" : e.getValue().toString());
         }

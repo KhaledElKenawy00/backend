@@ -17,10 +17,6 @@ public class WebSocketTicketController {
     private final WebSocketTicketService ticketService;
     private final UserContext userContext;
 
-    /**
-     * Mints a one-time WS handshake ticket bound to the caller's X-User-Id.
-     * The client passes it back as ?ticket= on the WS connect.
-     */
     @PostMapping("/ws-ticket")
     public Map<String, String> createTicket() {
         Long userId = userContext.currentUserId();

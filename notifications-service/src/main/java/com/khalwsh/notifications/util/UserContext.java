@@ -7,15 +7,6 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
 
-/**
- * Reads the authenticated user id from the X-User-Id header — set by the
- * gateway after JWT validation. The notification service itself does no JWT
- * work; it trusts whatever the gateway forwards.
- *
- * Throws:
- *   - 401 if the header is missing or blank.
- *   - 400 if the header is present but not a valid Long.
- */
 @Component
 public class UserContext {
 

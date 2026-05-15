@@ -21,8 +21,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        // /topic = broadcast (unused today, reserved for future)
-        // /queue = per-user point-to-point — what we push notifications on
         config.enableSimpleBroker("/topic", "/queue");
         config.setApplicationDestinationPrefixes("/app");
         config.setUserDestinationPrefix("/user");
@@ -33,6 +31,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.addEndpoint(wsEndpoint)
                 .addInterceptors(handshakeInterceptor)
                 .setHandshakeHandler(userHandshakeHandler)
-                .setAllowedOriginPatterns("*");   // gateway is the real CORS boundary
+                .setAllowedOriginPatterns("*");
     }
 }

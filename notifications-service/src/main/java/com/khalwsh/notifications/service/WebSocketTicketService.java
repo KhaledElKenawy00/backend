@@ -10,13 +10,9 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * One-time, short-lived tickets for WebSocket handshakes.
- *
- * Browsers can't set headers on a WS upgrade, so we mint a ticket via REST
- * (authenticated by X-User-Id) and the client passes it as ?ticket= on the
- * WS connect. Same pattern chat-service uses.
- */
+// Browsers cannot set headers on a WebSocket handshake, so we issue a
+// short-lived ticket over REST (where X-User-Id is set by the gateway)
+// and the client passes it back as a query string param on the WS connect.
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -30,7 +26,6 @@ public class WebSocketTicketService {
     @Value("${notifications.ws.ticket-ttl-seconds}")
     private long ttlSeconds;
 
-    /** Mints a fresh ticket bound to userId, stores in Redis with TTL. */
     public String createTicket(Long userId) {
         String ticket = UUID.randomUUID().toString();
         String key = ticketPrefix + ticket;
@@ -38,11 +33,8 @@ public class WebSocketTicketService {
         return ticket;
     }
 
-    /**
-     * Atomically reads and deletes the ticket (GETDEL). Returns the userId if
-     * the ticket existed; empty if missing, expired, or already consumed.
-     * Single-use by construction.
-     */
+    // Atomic GETDEL: the ticket is consumed on the first successful read,
+    // so a replay returns empty even if it happens within the TTL window.
     public Optional<Long> consumeTicket(String ticket) {
         if (ticket == null || ticket.isBlank()) {
             return Optional.empty();

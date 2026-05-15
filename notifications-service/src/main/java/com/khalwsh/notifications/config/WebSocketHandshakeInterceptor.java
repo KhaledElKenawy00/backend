@@ -14,17 +14,6 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Runs before the STOMP/WebSocket handshake completes. Reads the ?ticket=
- * query param, consumes it (single-use), and stashes the resolved userId in
- * the WS session attributes — which UserHandshakeHandler then turns into the
- * session Principal so convertAndSendToUser(userId, ...) routes correctly.
- *
- * Reject paths:
- *   - missing ticket    → 401, drop handshake
- *   - unknown / expired → 401, drop handshake
- *   - replayed ticket   → 401, drop handshake (consume already deleted it)
- */
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -64,6 +53,5 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
                                ServerHttpResponse response,
                                WebSocketHandler wsHandler,
                                Exception exception) {
-        // no-op
     }
 }

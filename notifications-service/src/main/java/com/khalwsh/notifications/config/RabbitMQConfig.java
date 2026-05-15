@@ -24,9 +24,7 @@ public class RabbitMQConfig {
 
     @Bean
     public Queue queue() {
-        return QueueBuilder
-                .durable(queueName)
-                .build();
+        return QueueBuilder.durable(queueName).build();
     }
 
     @Bean
@@ -36,19 +34,12 @@ public class RabbitMQConfig {
 
     @Bean
     public Binding binding() {
-        return BindingBuilder
-                .bind(queue())
-                .to(exchange())
-                .with(routingKey);
+        return BindingBuilder.bind(queue()).to(exchange()).with(routingKey);
     }
 
-    /**
-     * Defining this bean is sufficient — Spring Boot's auto-configured
-     * rabbitListenerContainerFactory picks it up and wires it into the
-     * @RabbitListener container, alongside the retry policy from
-     * application.properties. NotificationListener.handle(...) receives
-     * a deserialized NotificationEvent directly.
-     */
+    // Spring Boot's auto-configured rabbitListenerContainerFactory picks this up
+    // and wires it into @RabbitListener containers. Defining the factory ourselves
+    // would bypass auto-config and silently drop the retry policy from properties.
     @Bean
     public JacksonJsonMessageConverter messageConverter() {
         return new JacksonJsonMessageConverter();

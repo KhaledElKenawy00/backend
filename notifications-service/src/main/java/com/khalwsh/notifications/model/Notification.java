@@ -15,7 +15,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.Map;
 
-@Document(collection = "Notifications")
+@Document(collection = "notifications")
 @CompoundIndexes({
         @CompoundIndex(name = "inbox_idx",  def = "{'userId': 1, 'createdAt': -1}"),
         @CompoundIndex(name = "unread_idx", def = "{'userId': 1, 'read': 1}")
