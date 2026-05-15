@@ -1,5 +1,6 @@
 package com.khalwsh.notifications.template;
 
+import com.khalwsh.notifications.messaging.NotificationType;
 import lombok.Getter;
 
 @Getter
@@ -16,5 +17,16 @@ public enum EmailTemplate {
     EmailTemplate(String templateName, String templateSubject) {
         this.templateName = templateName;
         this.templateSubject = templateSubject;
+    }
+
+    public static EmailTemplate fromType(NotificationType type) {
+        return switch (type) {
+            case SIGNUP_SUCCESS         -> SIGNUP_SUCCESS;
+            case LOGIN_SUCCESS          -> LOGIN_SUCCESS;
+            case OTP                    -> OTP;
+            case PASSWORD_RESET_SUCCESS -> PASSWORD_RESET_SUCCESS;
+            case TASK_ASSIGNED          -> throw new IllegalArgumentException(
+                    "TASK_ASSIGNED is not an email type");
+        };
     }
 }
