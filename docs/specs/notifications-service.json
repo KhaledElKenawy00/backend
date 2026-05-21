@@ -1,0 +1,286 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Notifications Service",
+    "description": "## Overview\nManages in-app notifications and email delivery for **My Virtual Office**.\n\n## Authentication\nAll endpoints require `X-User-Id` and `X-User-Role` headers injected by the API gateway.\n\n## Real-time delivery\nNotifications are pushed in real time over WebSocket (STOMP). Obtain a ticket first:\n1. `POST /api/notifications/ws-ticket` → get a short-lived ticket.\n2. Open a STOMP WebSocket: `ws://localhost:8083/ws?ticket=<ticket>`\n3. Subscribe to `/user/queue/notifications` to receive live notification events.\n\n## Email\nThe `POST /api/notifications/email` endpoint is an internal endpoint called by other services (not the browser client). It triggers transactional emails via the configured mail provider.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "My Virtual Office",
+      "url": "https://github.com/My-Virtual-Office"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8083",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Inbox",
+      "description": "Read, mark, and delete in-app notifications for the authenticated user."
+    },
+    {
+      "name": "Email",
+      "description": "Internal endpoint for triggering transactional emails. Called by other backend services via RabbitMQ or direct HTTP — not exposed to browser clients."
+    },
+    {
+      "name": "WebSocket",
+      "description": "Issue a short-lived ticket to authenticate a STOMP WebSocket connection."
+    }
+  ],
+  "paths": {
+    "/api/notifications": {
+      "get": {
+        "tags": ["Inbox"],
+        "summary": "Get notification inbox",
+        "description": "Returns a paginated list of the authenticated user's notifications, ordered by most recent. Also includes the total unread count.",
+        "operationId": "getInbox",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": { "type": "integer", "default": 1, "minimum": 1 }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "description": "Number of notifications per page",
+            "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated notification inbox",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InboxPage" }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/notifications/unread-count": {
+      "get": {
+        "tags": ["Inbox"],
+        "summary": "Get unread notification count",
+        "description": "Returns the number of unread notifications for the authenticated user.",
+        "operationId": "getUnreadCount",
+        "responses": {
+          "200": {
+            "description": "Unread count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "unread": { "type": "integer", "example": 5 }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "patch": {
+        "tags": ["Inbox"],
+        "summary": "Mark a notification as read",
+        "description": "Marks a single notification as read. Returns 404 if the notification does not belong to the authenticated user.",
+        "operationId": "markAsRead",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Notification ID" }
+        ],
+        "responses": {
+          "200": { "description": "Notification marked as read" },
+          "404": { "description": "Notification not found or does not belong to the current user" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/notifications/read-all": {
+      "patch": {
+        "tags": ["Inbox"],
+        "summary": "Mark all notifications as read",
+        "description": "Marks every unread notification for the authenticated user as read in a single operation.",
+        "operationId": "markAllAsRead",
+        "responses": {
+          "200": {
+            "description": "Number of notifications updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": { "type": "integer", "example": 12 }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/notifications/{id}": {
+      "delete": {
+        "tags": ["Inbox"],
+        "summary": "Delete a notification",
+        "description": "Permanently removes a notification from the user's inbox.",
+        "operationId": "deleteNotification",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Notification ID" }
+        ],
+        "responses": {
+          "204": { "description": "Notification deleted" },
+          "404": { "description": "Notification not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/notifications/email": {
+      "post": {
+        "tags": ["Email"],
+        "summary": "Send a transactional email",
+        "description": "**Internal endpoint** — called by other services, not by browser clients. Triggers a transactional email using the specified template and variable substitutions.",
+        "operationId": "sendEmail",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendEmailRequest" },
+              "example": {
+                "template": "WORKSPACE_INVITE",
+                "to": "user@example.com",
+                "vars": {
+                  "workspaceName": "Acme Corp",
+                  "inviteLink": "https://app.example.com/invite?token=abc123"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email queued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "sent" },
+                    "eventId": { "type": "string", "format": "uuid", "example": "a1b2c3d4-..." }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Email delivery failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "error" },
+                    "eventId": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/notifications/ws-ticket": {
+      "post": {
+        "tags": ["WebSocket"],
+        "summary": "Issue a WebSocket authentication ticket",
+        "description": "Returns a short-lived ticket used to authenticate the STOMP WebSocket connection. Connect with: `ws://host/ws?ticket=<value>` and subscribe to `/user/queue/notifications` for real-time notification events.",
+        "operationId": "createWsTicket",
+        "responses": {
+          "200": {
+            "description": "Ticket issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ticket": { "type": "string", "example": "a1b2c3d4-e5f6-..." }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "UserHeaders": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-User-Id",
+        "description": "Numeric user ID injected by the API gateway after JWT validation. Also requires `X-User-Role: USER` or `X-User-Role: ADMIN`."
+      }
+    },
+    "schemas": {
+      "NotificationResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "64abc123..." },
+          "userId": { "type": "integer", "example": 42 },
+          "title": { "type": "string", "example": "New message in #general" },
+          "body": { "type": "string", "example": "John Doe: Hello team!" },
+          "type": { "type": "string", "example": "CHAT_MESSAGE" },
+          "read": { "type": "boolean", "example": false },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InboxPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/NotificationResponse" }
+          },
+          "page": { "type": "integer", "example": 1 },
+          "size": { "type": "integer", "example": 20 },
+          "total": { "type": "integer", "example": 47 },
+          "unreadCount": { "type": "integer", "example": 5 }
+        }
+      },
+      "SendEmailRequest": {
+        "type": "object",
+        "required": ["template", "to"],
+        "properties": {
+          "template": {
+            "type": "string",
+            "description": "Email template identifier",
+            "example": "WORKSPACE_INVITE"
+          },
+          "to": {
+            "type": "string",
+            "format": "email",
+            "description": "Recipient email address",
+            "example": "user@example.com"
+          },
+          "vars": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Template variable substitutions",
+            "example": { "workspaceName": "Acme Corp", "inviteLink": "https://..." }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,288 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "User Service",
+    "description": "## Overview\nHandles user registration, authentication, and profile management for **My Virtual Office**.\n\n## Authentication\n- **Public endpoints** (`/api/auth/*`) — no headers required.\n- **Protected endpoints** (`/api/users/*`) — require `X-User-Id` and `X-User-Role` headers set by the API gateway after JWT validation.\n\n## Token flow\n1. Register or login → receive a JWT token in the response.\n2. Send the JWT to the API gateway on subsequent requests.\n3. The gateway validates the JWT and injects `X-User-Id` / `X-User-Role` headers before forwarding to other services.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "My Virtual Office",
+      "url": "https://github.com/My-Virtual-Office"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8081",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "Public endpoints for user registration and login. Returns a JWT token on success."
+    },
+    {
+      "name": "Profile",
+      "description": "Protected endpoints for managing the authenticated user's own profile — password, info, and photo."
+    }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new user",
+        "description": "Creates a new user account. Returns a JWT token and basic profile info on success. Returns 403 if the email is already taken.",
+        "operationId": "register",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" },
+              "example": {
+                "firstName": "John",
+                "lastName": "Doe",
+                "email": "john.doe@example.com",
+                "password": "SecurePass123!",
+                "phoneNumber": "+1234567890"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registration successful — JWT token returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" },
+                "example": {
+                  "token": "eyJhbGciOiJIUzI1NiJ9...",
+                  "email": "john.doe@example.com",
+                  "firstName": "John",
+                  "lastName": "Doe",
+                  "errorMessage": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" },
+                "example": {
+                  "token": null,
+                  "email": null,
+                  "firstName": null,
+                  "lastName": null,
+                  "errorMessage": "Email already in use"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login with email and password",
+        "description": "Authenticates a user and returns a JWT token. Returns 403 with an error message if credentials are invalid.",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" },
+              "example": {
+                "email": "john.doe@example.com",
+                "password": "SecurePass123!"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful — JWT token returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" },
+                "example": {
+                  "token": null,
+                  "errorMessage": "Invalid email or password"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/me": {
+      "get": {
+        "tags": ["Profile"],
+        "summary": "Get current user profile",
+        "description": "Returns the authenticated user's profile information.",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/users/me/password": {
+      "put": {
+        "tags": ["Profile"],
+        "summary": "Update password",
+        "description": "Changes the authenticated user's password. Requires the current password for verification.",
+        "operationId": "updatePassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdatePasswordRequest" },
+              "example": {
+                "oldPassword": "OldPass123!",
+                "newPassword": "NewPass456!"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password updated successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponse" }
+              }
+            }
+          },
+          "403": { "description": "Old password is incorrect" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/users/me/photo": {
+      "post": {
+        "tags": ["Profile"],
+        "summary": "Upload profile photo",
+        "description": "Uploads or replaces the authenticated user's profile photo. Accepts common image formats (JPEG, PNG, WebP).",
+        "operationId": "uploadPhoto",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Image file (JPEG, PNG, WebP)"
+                  }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Photo uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "get": {
+        "tags": ["Profile"],
+        "summary": "Get profile photo",
+        "description": "Returns the authenticated user's profile photo as a binary image. The `Content-Type` header reflects the actual image format.",
+        "operationId": "getPhoto",
+        "responses": {
+          "200": {
+            "description": "Profile photo bytes",
+            "content": {
+              "image/jpeg": { "schema": { "type": "string", "format": "binary" } },
+              "image/png": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": { "description": "No photo uploaded yet" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "UserHeaders": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-User-Id",
+        "description": "Numeric user ID injected by the API gateway after JWT validation. Also requires `X-User-Role: USER` or `X-User-Role: ADMIN`."
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["firstName", "lastName", "email", "password"],
+        "properties": {
+          "firstName": { "type": "string", "example": "John" },
+          "lastName": { "type": "string", "example": "Doe" },
+          "email": { "type": "string", "format": "email", "example": "john.doe@example.com" },
+          "password": { "type": "string", "format": "password", "example": "SecurePass123!" },
+          "phoneNumber": { "type": "string", "example": "+1234567890" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "example": "john.doe@example.com" },
+          "password": { "type": "string", "format": "password", "example": "SecurePass123!" }
+        }
+      },
+      "UpdatePasswordRequest": {
+        "type": "object",
+        "required": ["oldPassword", "newPassword"],
+        "properties": {
+          "oldPassword": { "type": "string", "format": "password" },
+          "newPassword": { "type": "string", "format": "password" }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string", "description": "JWT token — null on failure", "example": "eyJhbGciOiJIUzI1NiJ9..." },
+          "email": { "type": "string", "format": "email" },
+          "firstName": { "type": "string" },
+          "lastName": { "type": "string" },
+          "errorMessage": { "type": "string", "description": "Populated only on failure", "example": null }
+        }
+      },
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "success" },
+          "fields": { "type": "object", "additionalProperties": true }
+        }
+      }
+    }
+  }
+}

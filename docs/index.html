@@ -18,7 +18,12 @@
     <script>
       window.onload = function () {
         SwaggerUIBundle({
-          url: "./specs/chat-service.json",
+          urls: [
+            { url: "./specs/chat-service.json",          name: "Chat Service" },
+            { url: "./specs/user-service.json",           name: "User Service" },
+            { url: "./specs/notifications-service.json",  name: "Notifications Service" }
+          ],
+          "urls.primaryName": "Chat Service",
           dom_id: "#swagger-ui",
           presets: [
             SwaggerUIBundle.presets.apis,
