@@ -34,7 +34,7 @@ eureka:
 
 logging:
   level:
-    com.khalwsh.chat_service: INFO
+    com.virtualoffice.chat_service: INFO
     org.springframework.data.mongodb: INFO
     org.springframework.data.redis: INFO
     org.springframework.web.socket: DEBUG
