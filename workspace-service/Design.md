@@ -16,19 +16,18 @@ A **Workspace** represents a single virtual office — one per company/team.
 |---|-------|-------------|
 | 1 | Name | Display name of the workspace (e.g. "Acme Corp HQ") |
 | 2 | URL slug | Unique slug → `https://<slug>.virtual.office` |
-| 3 | Owner ID | The user who created the workspace (super-admin) |
+| 3 | Owner ID | Reference to user-service |
 | 4 | Description | Short description / tagline |
 | 5 | Logo | Company logo URL |
-| 6 | 2D Layout Map | JSON or structured data defining the spatial floorplan (walls, zones, furniture) |
-| 7 | Rooms | List of configured rooms (meeting rooms, focus areas, social spaces) — managed by **room-service** but referenced here |
-| 8 | Desks | Collection of desks placed on the 2D map |
-| 9 | Members | List of users who have access (each represented by a Desk) |
-| 10 | Theme & Branding | Colors, floor textures, wall styles, custom assets |
-| 11 | Max Capacity | Maximum number of members allowed |
-| 12 | Default Timezone | Workspace-wide default timezone |
-| 13 | Global Settings | Default notification rules, workspace-wide permissions, feature toggles |
-| 14 | Created At | Timestamp |
-| 15 | Updated At | Timestamp |
+| 6 | 2D Layout Map | JSON document defining the spatial floorplan (walls, zones, furniture). Intentional JSON — spatial map data is hierarchical and queried as a whole, never column-by-column. |
+| 7 | Status | `WorkspaceStatus` enum: `ACTIVE`, `ARCHIVED`, `SUSPENDED` |
+| 8 | Visibility | `INVITE_ONLY` — access is granted exclusively via invitation; non-members cannot discover or request entry |
+| 9 | Invite Token | Shareable invite link token (UUID); rotatable by admin; used by `WorkspaceInvitation` to validate join links |
+| 10 | Default Timezone | Workspace-wide default timezone |
+| 11 | Created At | Timestamp |
+| 12 | Updated At | Timestamp |
+
+> **Relationships (not columns):** `Desks`, `Members`, and `Rooms` are derived via FK lookups in the `Desk` table and room-service — they are not stored columns on `Workspace`.
 
 ---
 
@@ -48,17 +47,86 @@ Think of it as a **membership record** that also carries the user's workspace-sp
 | 5 | Title | Job role/title within this company (e.g. "Senior Engineer") |
 | 6 | Work Email | Workspace-specific email (defaults to user's primary email) |
 | 7 | Phone | Work phone number |
-| 8 | Personal Image | Profile photo URL |
-| 9 | Avatar | 2D avatar used on the spatial map |
+| 8 | Personal Image | Profile photo URL (stored in object storage; URL saved here) |
+| 9 | Avatar Character | `AvatarCharacter` enum — character skin for the 2D sprite (e.g. `ADAM`, `ASH`, `LUCY`, `NANCY`). Sprites are bundled in the SkyOffice client; backend stores the key only. |
 | 10 | Timezone | User's timezone (defaults to workspace default) |
-| 11 | Status | Current state: `Active`, `Away`, `Do Not Disturb`, `Focus Mode`, or a custom status text |
+| 11 | Status | `DeskStatus` enum + optional custom text: `ACTIVE`, `AWAY`, `DO_NOT_DISTURB`, `FOCUS_MODE`, `CUSTOM` |
 | 12 | Status Emoji | Optional emoji for custom status |
-| 13 | Spatial Position | `{ x, y }` coordinates on the 2D workspace map |
-| 14 | Is Online | Whether the user is currently connected |
-| 15 | Last Seen At | Timestamp of last activity |
-| 16 | Permissions / Role | Role within this workspace: `OWNER`, `ADMIN`, `MEMBER`, `GUEST` |
-| 17 | Desk Customization | Personal items, widgets, quick-access links displayed on their desk area |
-| 18 | Joined At | When the user joined this workspace |
+| 13 | Position X | X coordinate on the 2D workspace map |
+| 14 | Position Y | Y coordinate on the 2D workspace map |
+| 15 | Is Online | Cached presence flag — synced back from Colyseus on connect/disconnect. Not a source of truth; always verify against Last Seen At. |
+| 16 | Last Seen At | Timestamp of last activity |
+| 17 | Permissions / Role | `WorkspaceRole` enum: `OWNER`, `ADMIN`, `MEMBER`, `GUEST` |
+| 18 | Desk Customization | JSON document — personal widgets and quick-access links. Intentional JSON — structure is user-defined and variable; never queried by individual key. |
+| 19 | Bio | Short personal description shown in the desk overlay panel |
+| 20 | Links | `Set<URL>` — social/profile URLs (stored as a separate one-column child table: `desk_id`, `url`) |
+| 21 | Team ID | FK → `Team.ID` within this workspace |
+| 22 | Invite Status | `InviteStatus` enum: `PENDING`, `ACCEPTED` — desk record is created on invite, accepted on join |
+| 23 | Invited By | User ID of the workspace member who sent the invitation |
+| 24 | Is Active | Soft-delete flag — set to `false` when a member is removed; preserves history |
+| 25 | Joined At | When the user accepted their invitation and joined the workspace |
+
+> **Links** are stored as a `Set<URL>` in a minimal child table (`desk_id`, `url`) — no platform label, no JSON blob.
+
+---
+
+### 3. MapObject (Interactive Asset)
+
+A **MapObject** is a persistent interactive element placed on the 2D map — computers (screen-sharing stations) and whiteboards (collaborative drawing surfaces). These are owned by workspace-service so the real-time layer (SkyOffice/Colyseus) can load the workspace's full object configuration on boot rather than hard-coding it.
+
+> Mental model: MapObjects are the "furniture with a function" on the map. Their position and IDs are stored here; who is currently using them is tracked ephemerally by the Colyseus server.
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | ID | Stable unique identifier (used as the Colyseus key for this object) |
+| 2 | Workspace ID | Which workspace this object belongs to |
+| 3 | Type | `MapObjectType` enum — current values: `COMPUTER`, `WHITEBOARD` |
+| 4 | Label | Human-readable name (e.g. "Whiteboard A", "Shared Screen 1") |
+| 5 | Position X | X coordinate on the 2D map |
+| 6 | Position Y | Y coordinate on the 2D map |
+| 7 | Room ID | Stable Colyseus room ID for this object's session — used by both `COMPUTER` (screen-sharing room) and `WHITEBOARD` (collaborative drawing room). Must persist so users can rejoin an in-progress session. |
+| 8 | Capacity | Max concurrent users allowed to connect to this object at once |
+| 9 | Is Active | Soft-disable — hides the object from the map without removing it |
+| 10 | Created At | Timestamp |
+| 11 | Updated At | Timestamp |
+
+> **Ephemeral state NOT stored here:** which user is currently connected to a computer/whiteboard is managed in-memory by Colyseus and is lost when the session ends. Only the object's identity and position are persistent.
+
+---
+
+### 4. WorkspaceInvitation
+
+A **WorkspaceInvitation** tracks the lifecycle of an invitation sent to a user to join a workspace. A `Desk` record (with `Invite Status = PENDING`) is created alongside the invitation; on acceptance, the desk is activated and the invitation is marked `ACCEPTED`.
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | ID | — |
+| 2 | Workspace ID | FK → `Workspace.ID` |
+| 3 | Invited Email | Email address of the invitee (user may not exist yet in user-service) |
+| 4 | Invited By | FK → User ID in user-service |
+| 5 | Token | Unique UUID token embedded in the invite link; validated on join |
+| 6 | Role | Role to assign on acceptance: `MEMBER`, `GUEST`, etc. |
+| 7 | Status | `InviteStatus` enum: `PENDING`, `ACCEPTED`, `DECLINED`, `EXPIRED` |
+| 8 | Expires At | Timestamp after which the token is no longer valid |
+| 9 | Created At | Timestamp |
+
+---
+
+### 5. Team
+
+A **Team** is a named group within a workspace (e.g. "Engineering", "Design", "Marketing"). Desks reference a Team to enable directory filtering and org-level grouping.
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | ID | — |
+| 2 | Workspace ID | FK → `Workspace.ID` — teams are scoped to a workspace |
+| 3 | Name | Team display name (e.g. "Engineering") |
+| 4 | Description | Optional short description |
+| 5 | Created At | Timestamp |
+| 6 | Updated At | Timestamp |
+
+---
+
 
 ---
 
@@ -76,7 +144,7 @@ Think of it as a **membership record** that also carries the user's workspace-sp
 - I want to **invite users** via email or link, so they can join the workspace and get a desk assigned.
 - I want to **remove a member** from the workspace, revoking their access and freeing their desk.
 - I want to **assign roles** (Admin, Member, Guest), so different people have different levels of control.
-- I want to **set workspace-wide settings** (max capacity, feature toggles, default timezone), so the office operates consistently.
+- I want to **set workspace-wide settings** (default timezone, feature toggles), so the office operates consistently.
 - I want to **view a members directory** showing everyone's name, title, status, and role at a glance.
 
 ---
@@ -132,16 +200,59 @@ Think of it as a **membership record** that also carries the user's workspace-sp
 
 ---
 
+### Real-Time Layer (SkyOffice / Colyseus) Integration
+
+SkyOffice is a Node.js/Colyseus multiplayer server that manages the live session on top of the persistent data owned by workspace-service. The two layers are complementary: workspace-service is the source of truth for configuration; Colyseus is the source of truth for live state.
+
+#### What Colyseus loads from workspace-service at room boot
+
+When a Colyseus room is created for a workspace, it calls workspace-service to fetch:
+
+| Data | workspace-service field |
+|------|------------------------|
+| Workspace name, status, invite token | `Workspace` entity |
+| All MapObjects (computers, whiteboards) and their positions | `MapObject` entity |
+| Member list and their desk positions + avatar characters | `Desk` entity |
+
+#### What Colyseus manages ephemerally (NOT persisted)
+
+These exist only in Colyseus memory and are lost when the session ends:
+
+| Ephemeral state | Colyseus field |
+|-----------------|----------------|
+| Player's current x, y position | `Player.x / Player.y` |
+| Avatar animation state | `Player.anim` (e.g. `idle_right`, `run_left`) |
+| Proximity call readiness | `Player.readyToConnect` |
+| Video stream connected | `Player.videoConnected` |
+| Who is currently using a computer | `Computer.connectedUser` |
+| Who is currently using a whiteboard | `Whiteboard.connectedUser` |
+| Room chat messages (session only) | `ChatMessage[]` — forwarded to `chat-service` for persistence |
+
+#### Sync-back events (Colyseus → workspace-service)
+
+Colyseus should notify workspace-service on these events:
+
+| Event | Data written to workspace-service |
+|-------|-----------------------------------|
+| User connects to workspace | `Desk.Is Online = true`, `Desk.Last Seen At` |
+| User disconnects | `Desk.Is Online = false`, `Desk.Last Seen At` |
+| User updates status in-session | `Desk.Status`, `Desk.Status Emoji` |
+| User moves to a new desk position (if permanent) | `Desk.Position X`, `Desk.Position Y` |
+
+---
+
 ### Cross-Service Interactions
 
 | Interaction | Services Involved | Description |
 |---|---|---|
 | **User joins workspace** | `user-service` → `workspace-service` | Validate user exists, create a Desk record |
+| **Real-time session boots** | `SkyOffice/Colyseus` → `workspace-service` | Load workspace config, layout, MapObjects, and member desks |
+| **Session presence sync** | `SkyOffice/Colyseus` → `workspace-service` | Push online/offline and status changes back to workspace-service |
+| **Chat messages** | `SkyOffice/Colyseus` → `chat-service` | Room chat forwarded to chat-service for persistence; workspace-service provides the workspace context |
 | **Desk shows tasks** | `workspace-service` ↔ `tasks-service` | Desk pulls tasks assigned to this user in this workspace |
 | **Status affects notifications** | `workspace-service` → `notification-service` | When status = DND/Focus, notification-service suppresses delivery |
 | **Entering a room** | `workspace-service` → `room-service` | Avatar moves into a room zone, room-service handles voice/video join |
 | **Scheduling a room** | `calendar-service` → `workspace-service` | Calendar reserves a room; workspace-service validates the room exists on the layout |
-| **Chat context** | `chat-service` ↔ `workspace-service` | Chat channels may be scoped to a workspace; desk provides member context |
 | **Gateway routing** | `gateway-api` → `workspace-service` | All client requests go through the gateway |
 
 ---
@@ -156,5 +267,7 @@ To keep boundaries clear:
 - **Task creation & tracking** → `tasks-service`
 - **Meeting scheduling** → `calendar-service`
 - **Push notifications & emails** → `notification-service`
+- **Live player positions & animation state** → `SkyOffice/Colyseus` (ephemeral, too frequent to persist)
+- **Who is currently using a computer or whiteboard** → `SkyOffice/Colyseus` (ephemeral session state)
 
 Workspace-service is the **spatial backbone**: it knows *where* everything is, *who* is in the office, and *what state* they're in. Other services consume this context to do their jobs.
