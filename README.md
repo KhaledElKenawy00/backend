@@ -13,8 +13,7 @@ A microservices-based backend system for a Virtual Office application.
 | **Chat Service**         | `8084` | Handles all messaging (direct messages, workspace chats, room chats)           |
 | **Tasks Service**        | `8085` | Manages tasks, assignments, and progress tracking                              |
 | **Room Service**         | `8086` | Manages virtual rooms (voice channels, meetings, future video)                 |
-| **Workspace Service**    | `8087` | Manages workspaces, desks, and overall structure                               |
-| **Desk Service**         | `8088` | Manages desks (represents a user inside a workspace)                           |
+| **Workspace Service**    | `8087` | Manages workspaces, desks (user seats), 2D layout, and overall structure       |
 | **Shared Library**       | N/A    | Shared DTOs, utilities, and common logic                                       |
 
 ## Service Communication
@@ -31,7 +30,6 @@ graph TD
     subgraph Space[Space Management]
         WS[Workspace Service]
         RS[Room Service]
-        DS[Desk Service]
     end
 
     subgraph Collab[Collaboration & Workflow]
@@ -45,15 +43,15 @@ graph TD
     GW --> Collab
 
     %% Resource Interactions
-    WS --> DS & RS
+    WS --> RS
     RS --> Chat & Cal
     
     %% Task & Notification Flow
-    TS --> NS & DS
+    TS --> NS & WS
     Cal --> NS
     
     %% Validation & Lookups
-    DS -.-> US & WS
+    WS -.-> US
     Chat -.-> US
 ```
 
@@ -62,7 +60,7 @@ graph TD
 
 * **User** = you
 * **Workspace** = a company / team
-* **Desk** = your seat in that workspace
+* **Desk** = your seat in that workspace (managed inside workspace-service)
 * **Room** = voice / meeting space
 * **Chat** = messaging layer
 

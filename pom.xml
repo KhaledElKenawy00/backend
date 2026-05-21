@@ -18,7 +18,6 @@
     <modules>
         <module>calendar-service</module>
         <module>chat-service</module>
-        <module>desk-service</module>
         <module>gateway-api</module>
         <module>notification-service</module>
         <module>room-service</module>
