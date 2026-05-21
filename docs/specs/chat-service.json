@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Chat Service",
-    "description": "Real-time messaging API for My Virtual Office. Handles group channels, direct messages, threads, read receipts, and WebSocket ticket issuance.",
+    "description": "## Overview\nReal-time messaging API for **My Virtual Office**. Supports group channels, direct messages, threaded conversations, read receipts, and WebSocket connections.\n\n## Authentication\nAll endpoints (except `/health`) require two headers injected by the API gateway after JWT validation:\n\n| Header | Description |\n|--------|-------------|\n| `X-User-Id` | Authenticated user's numeric ID |\n| `X-User-Role` | Either `USER` or `ADMIN` |\n\nDo **not** send a raw JWT — authenticate through the gateway which sets these headers automatically.\n\n## Real-time events\nSend a `POST /api/chat/ws-ticket` to get a short-lived ticket, then open a STOMP WebSocket connection:\n```\nws://localhost:8082/ws?ticket=<your-ticket>\n```\nSubscribe to `/topic/channel/{channelId}` or `/topic/thread/{threadId}` to receive live events.",
     "version": "1.0.0",
     "contact": {
       "name": "My Virtual Office",
@@ -16,13 +16,13 @@
     }
   ],
   "tags": [
-    { "name": "Channels", "description": "Group channel management" },
-    { "name": "Direct Messages", "description": "One-on-one direct message conversations" },
-    { "name": "Messages", "description": "Send, edit, and delete messages" },
-    { "name": "Threads", "description": "Threaded conversations within a channel" },
-    { "name": "Read Receipts", "description": "Track read state for channels and threads" },
-    { "name": "WebSocket", "description": "WebSocket connection management" },
-    { "name": "Health", "description": "Service health check" }
+    { "name": "Channels", "description": "Create and manage group channels within a workspace. A channel groups members and their messages together." },
+    { "name": "Direct Messages", "description": "One-on-one private conversations between two users. A DM channel is created automatically the first time two users message each other." },
+    { "name": "Messages", "description": "Send, edit, and delete messages inside a channel or thread. Mutations are broadcast in real time via WebSocket to all channel subscribers." },
+    { "name": "Threads", "description": "Threaded discussions branching off a message in a channel. Each thread has its own message stream and WebSocket topic." },
+    { "name": "Read Receipts", "description": "Track the last-read position for a user in a channel or thread, and retrieve the current unread message count." },
+    { "name": "WebSocket", "description": "Issue a short-lived ticket used to authenticate the STOMP WebSocket connection." },
+    { "name": "Health", "description": "Liveness probe — no authentication required." }
   ],
   "paths": {
     "/api/chat/health": {
@@ -519,7 +519,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-User-Id",
-        "description": "User ID injected by the API gateway after JWT validation. Also requires `X-User-Role` header (`USER` or `ADMIN`)."
+        "description": "Numeric user ID set by the API gateway after validating the JWT. Must be sent alongside `X-User-Role: USER` or `X-User-Role: ADMIN`. Do not send a raw JWT — authenticate through the gateway."
       }
     },
     "schemas": {
