@@ -1,0 +1,664 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Chat Service",
+    "description": "Real-time messaging API for My Virtual Office. Handles group channels, direct messages, threads, read receipts, and WebSocket ticket issuance.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "My Virtual Office",
+      "url": "https://github.com/My-Virtual-Office"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8082",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    { "name": "Channels", "description": "Group channel management" },
+    { "name": "Direct Messages", "description": "One-on-one direct message conversations" },
+    { "name": "Messages", "description": "Send, edit, and delete messages" },
+    { "name": "Threads", "description": "Threaded conversations within a channel" },
+    { "name": "Read Receipts", "description": "Track read state for channels and threads" },
+    { "name": "WebSocket", "description": "WebSocket connection management" },
+    { "name": "Health", "description": "Service health check" }
+  ],
+  "paths": {
+    "/api/chat/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "description": "Returns OK. No authentication required.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string", "example": "OK" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/channels": {
+      "post": {
+        "tags": ["Channels"],
+        "summary": "Create a group channel",
+        "operationId": "createChannel",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateChannelRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Channel created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChannelResponse" }
+              }
+            }
+          },
+          "409": { "description": "Channel with this name already exists in the workspace" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "get": {
+        "tags": ["Channels"],
+        "summary": "List workspace channels",
+        "operationId": "getChannels",
+        "parameters": [
+          { "name": "workspaceId", "in": "query", "required": true, "schema": { "type": "integer" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1, "minimum": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of channels",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedChannelResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/channels/{id}": {
+      "get": {
+        "tags": ["Channels"],
+        "summary": "Get a channel by ID",
+        "operationId": "getChannel",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channel details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChannelResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this channel" },
+          "404": { "description": "Channel not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/channels/{id}/join": {
+      "post": {
+        "tags": ["Channels"],
+        "summary": "Join a channel",
+        "operationId": "joinChannel",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Successfully joined" },
+          "404": { "description": "Channel not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/channels/{id}/leave": {
+      "post": {
+        "tags": ["Channels"],
+        "summary": "Leave a channel",
+        "operationId": "leaveChannel",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Successfully left" },
+          "404": { "description": "Channel not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/dm": {
+      "post": {
+        "tags": ["Direct Messages"],
+        "summary": "Get or create a DM conversation",
+        "operationId": "getOrCreateDm",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateDmRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "DM channel (existing or newly created)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChannelResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "get": {
+        "tags": ["Direct Messages"],
+        "summary": "List all DM conversations for the current user",
+        "operationId": "getDirectMessages",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1, "minimum": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of DM channels",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedChannelResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/channels/{id}/messages": {
+      "post": {
+        "tags": ["Messages"],
+        "summary": "Send a message to a channel",
+        "operationId": "sendMessage",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendMessageRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Message sent",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this channel" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Get messages in a channel",
+        "operationId": "getMessages",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "before", "in": "query", "description": "Cursor — return messages before this message ID", "schema": { "type": "string" } },
+          { "name": "after", "in": "query", "description": "Cursor — return messages after this message ID", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1, "minimum": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of messages",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedMessageResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this channel" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/messages/{id}": {
+      "put": {
+        "tags": ["Messages"],
+        "summary": "Edit a message",
+        "operationId": "editMessage",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EditMessageRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not the message author" },
+          "404": { "description": "Message not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "delete": {
+        "tags": ["Messages"],
+        "summary": "Delete a message",
+        "operationId": "deleteMessage",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Message deleted" },
+          "403": { "description": "Not the message author or admin" },
+          "404": { "description": "Message not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/channels/{id}/threads": {
+      "post": {
+        "tags": ["Threads"],
+        "summary": "Create a thread in a channel",
+        "operationId": "createThread",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateThreadRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Thread created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ThreadResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "get": {
+        "tags": ["Threads"],
+        "summary": "List threads in a channel",
+        "operationId": "getChannelThreads",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1, "minimum": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of threads",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedThreadResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this channel" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/threads/{threadId}": {
+      "get": {
+        "tags": ["Threads"],
+        "summary": "Get a thread by ID",
+        "operationId": "getThread",
+        "parameters": [
+          { "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thread details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ThreadResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of the parent channel" },
+          "404": { "description": "Thread not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "delete": {
+        "tags": ["Threads"],
+        "summary": "Delete a thread",
+        "operationId": "deleteThread",
+        "parameters": [
+          { "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Thread deleted" },
+          "403": { "description": "Not the thread creator or admin" },
+          "404": { "description": "Thread not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/threads/{threadId}/messages": {
+      "get": {
+        "tags": ["Threads"],
+        "summary": "Get messages in a thread",
+        "operationId": "getThreadMessages",
+        "parameters": [
+          { "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "before", "in": "query", "description": "Cursor — return messages before this message ID", "schema": { "type": "string" } },
+          { "name": "after", "in": "query", "description": "Cursor — return messages after this message ID", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1, "minimum": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of thread messages",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedMessageResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of the parent channel" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/channels/{id}/read": {
+      "post": {
+        "tags": ["Read Receipts"],
+        "summary": "Mark a channel as read",
+        "operationId": "markChannelAsRead",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MarkReadRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Marked as read" },
+          "403": { "description": "Not a member of this channel" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/channels/{id}/unread": {
+      "get": {
+        "tags": ["Read Receipts"],
+        "summary": "Get unread message count for a channel",
+        "operationId": "getChannelUnreadCount",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unread count",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UnreadCountResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this channel" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/threads/{threadId}/read": {
+      "post": {
+        "tags": ["Read Receipts"],
+        "summary": "Mark a thread as read",
+        "operationId": "markThreadAsRead",
+        "parameters": [
+          { "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MarkReadRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Thread marked as read" },
+          "403": { "description": "Not a member of the parent channel" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/threads/{threadId}/unread": {
+      "get": {
+        "tags": ["Read Receipts"],
+        "summary": "Get unread message count for a thread",
+        "operationId": "getThreadUnreadCount",
+        "parameters": [
+          { "name": "threadId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unread count",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UnreadCountResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of the parent channel" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/chat/ws-ticket": {
+      "post": {
+        "tags": ["WebSocket"],
+        "summary": "Issue a WebSocket authentication ticket",
+        "description": "Returns a short-lived ticket used to authenticate the WebSocket STOMP connection. Pass it as a query parameter when connecting: `ws://host/ws?ticket=<value>`.",
+        "operationId": "createWsTicket",
+        "responses": {
+          "200": {
+            "description": "Ticket issued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WebSocketTicketResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "UserHeaders": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-User-Id",
+        "description": "User ID injected by the API gateway after JWT validation. Also requires `X-User-Role` header (`USER` or `ADMIN`)."
+      }
+    },
+    "schemas": {
+      "CreateChannelRequest": {
+        "type": "object",
+        "required": ["name", "workspaceId"],
+        "properties": {
+          "name": { "type": "string", "example": "general" },
+          "workspaceId": { "type": "integer", "example": 1 },
+          "description": { "type": "string", "example": "General discussion" }
+        }
+      },
+      "CreateDmRequest": {
+        "type": "object",
+        "required": ["targetUserId"],
+        "properties": {
+          "targetUserId": { "type": "integer", "example": 42 }
+        }
+      },
+      "SendMessageRequest": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "content": { "type": "string", "example": "Hello team!" },
+          "threadId": { "type": "string", "description": "Optional — send inside a thread" },
+          "replyToId": { "type": "string", "description": "Optional — reply to a specific message" },
+          "mentions": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "List of mentioned user IDs"
+          },
+          "clientMessageId": { "type": "string", "description": "Client-side idempotency key" }
+        }
+      },
+      "EditMessageRequest": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "content": { "type": "string", "example": "Updated message content" }
+        }
+      },
+      "CreateThreadRequest": {
+        "type": "object",
+        "required": ["rootMessageId"],
+        "properties": {
+          "rootMessageId": { "type": "string", "example": "64abc123..." },
+          "name": { "type": "string", "example": "Discussion on feature X" }
+        }
+      },
+      "MarkReadRequest": {
+        "type": "object",
+        "required": ["lastReadMessageId"],
+        "properties": {
+          "lastReadMessageId": { "type": "string", "example": "64abc123..." }
+        }
+      },
+      "ChannelResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["GROUP", "DIRECT"] },
+          "workspaceId": { "type": "integer" },
+          "members": { "type": "array", "items": { "type": "integer" } },
+          "createdBy": { "type": "integer" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MessageResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "channelId": { "type": "string" },
+          "senderId": { "type": "integer" },
+          "content": { "type": "string" },
+          "type": { "type": "string", "enum": ["TEXT", "SYSTEM"] },
+          "threadId": { "type": "string" },
+          "replyToId": { "type": "string" },
+          "mentions": { "type": "array", "items": { "type": "integer" } },
+          "clientMessageId": { "type": "string" },
+          "deleted": { "type": "boolean" },
+          "deletedAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ThreadResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "channelId": { "type": "string" },
+          "rootMessageId": { "type": "string" },
+          "name": { "type": "string" },
+          "createdBy": { "type": "integer" },
+          "deleted": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UnreadCountResponse": {
+        "type": "object",
+        "properties": {
+          "unreadCount": { "type": "integer", "example": 5 }
+        }
+      },
+      "WebSocketTicketResponse": {
+        "type": "object",
+        "properties": {
+          "ticket": { "type": "string", "example": "a1b2c3d4-..." }
+        }
+      },
+      "PaginatedChannelResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/ChannelResponse" } },
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer" }
+        }
+      },
+      "PaginatedMessageResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/MessageResponse" } },
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer" }
+        }
+      },
+      "PaginatedThreadResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/ThreadResponse" } },
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer" }
+        }
+      }
+    }
+  }
+}
