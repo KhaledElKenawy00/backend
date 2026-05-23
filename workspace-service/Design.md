@@ -127,6 +127,80 @@ A **Team** is a named group within a workspace (e.g. "Engineering", "Design", "M
 
 ---
 
+## Workspace Role Context
+
+Every user has a `WorkspaceRole` stored on their `Desk` record (`OWNER`, `ADMIN`, `MEMBER`, `GUEST`). This role is **workspace-scoped** — the same user can be ADMIN in one workspace and GUEST in another.
+
+Other services (e.g. `chat-service`) and the frontend both need this role to enforce authorization. The sections below define how it flows.
+
+---
+
+### Internal Role Lookup (service-to-service)
+
+Services that need to check a user's workspace role call workspace-service via its internal API:
+
+```
+GET /api/internal/workspace/{workspaceId}/members/{userId}/role
+```
+
+**Response:**
+```json
+{
+  "userId": 42,
+  "workspaceId": 1,
+  "role": "ADMIN",
+  "isActive": true
+}
+```
+
+Returns `404` if the user has no active Desk in this workspace (treat as unauthorized).
+
+> This endpoint must be blocked at the gateway — server-to-server only.
+
+#### How chat-service uses it
+
+Chat channels are scoped to a workspace. Before creating a channel, archiving one, or managing members, chat-service calls the role-lookup endpoint and enforces:
+
+| Action | Minimum role required |
+|--------|-----------------------|
+| Send a message | `GUEST` |
+| Create a channel | `MEMBER` |
+| Archive / delete a channel | `ADMIN` |
+| Add / remove channel members | `ADMIN` |
+
+> chat-service does **not** store the role locally — it queries workspace-service on demand. This keeps role changes in workspace-service immediately consistent across all consuming services.
+
+---
+
+### Frontend Role Storage
+
+After loading a workspace, the frontend must store the active user's `WorkspaceRole` in client state (Redux / Zustand / Context — whichever state library the project uses).
+
+**Where to get it:** `GET /api/workspace/{workspaceId}/desks/me` returns the full `DeskResponse`, which includes the `role` field.
+
+**What to store (per active workspace):**
+
+```ts
+type WorkspaceSession = {
+  workspaceId: number;
+  deskId: number;
+  role: "OWNER" | "ADMIN" | "MEMBER" | "GUEST";
+};
+```
+
+**When to use it:**
+- Show/hide admin UI controls (invite members, edit layout, manage map objects) based on `role >= ADMIN`
+- Guard client-side routes (workspace settings page → ADMIN only)
+- Pass optimistic permission checks before sending requests
+
+**When to invalidate it:**
+- On workspace switch (load the new workspace's desk)
+- On logout
+- When the server returns 403 on a workspace-scoped request (role may have been changed remotely — re-fetch)
+
+> The frontend role is for **UI gating only**. Server-side enforcement is authoritative; never skip the backend check because the frontend says the user is ADMIN.
+
+---
 
 ---
 

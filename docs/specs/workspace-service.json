@@ -749,6 +749,35 @@
         }
       }
     },
+    "/api/internal/workspace/{workspaceId}/members/{userId}/role": {
+      "get": {
+        "tags": ["Internal"],
+        "summary": "Get a member's workspace role",
+        "description": "**Server-to-server only.** Returns the workspace-scoped role for a specific user. Called by other services (e.g. chat-service) to enforce workspace-level authorization without storing role data locally.\n\nReturns `404` if the user has no active Desk in this workspace — treat as unauthorized.\n\nMust be blocked at the gateway for external clients.",
+        "operationId": "getMemberRole",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "User ID from user-service" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member role",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MemberRoleResponse" },
+                "example": {
+                  "userId": 42,
+                  "workspaceId": 1,
+                  "role": "ADMIN",
+                  "isActive": true
+                }
+              }
+            }
+          },
+          "404": { "description": "User has no active desk in this workspace" }
+        }
+      }
+    },
     "/api/internal/workspace/{workspaceId}/presence": {
       "post": {
         "tags": ["Internal"],
@@ -1003,6 +1032,16 @@
             "items": { "$ref": "#/components/schemas/MapObjectResponse" },
             "description": "All active map objects (isActive = true)"
           }
+        }
+      },
+      "MemberRoleResponse": {
+        "type": "object",
+        "description": "Workspace-scoped role for a user. Returned by the internal role-lookup endpoint consumed by other services.",
+        "properties": {
+          "userId": { "type": "integer", "format": "int64", "example": 42 },
+          "workspaceId": { "type": "integer", "format": "int64", "example": 1 },
+          "role": { "$ref": "#/components/schemas/WorkspaceRole" },
+          "isActive": { "type": "boolean", "example": true }
         }
       },
       "PresenceSyncRequest": {
