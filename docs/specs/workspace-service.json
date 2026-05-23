@@ -1,0 +1,1053 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Workspace Service",
+    "description": "## Overview\nThe **core spatial management service** for **My Virtual Office**. Owns Workspaces (virtual offices), Desks (membership + presence), Teams, MapObjects (computers and whiteboards on the 2D map), and the Invitation flow.\n\n## Authentication\nAll endpoints (except `/api/workspace/health`) require `X-User-Id` and `X-User-Role` headers injected by the API gateway after JWT validation.\n\nInternal endpoints under `/api/internal/` are server-to-server only (called by the SkyOffice/Colyseus real-time layer) and must be blocked at the gateway for external clients.\n\n## SkyOffice Integration\nOn room boot, Colyseus calls `GET /api/internal/workspace/{workspaceId}/session-config` to load the full workspace configuration (members, desks, map objects). It then calls `POST /api/internal/workspace/{workspaceId}/presence` to sync connect/disconnect and status changes back to workspace-service.\n\n## Visibility\nAll workspaces are `INVITE_ONLY` — access is granted exclusively via invitation; non-members cannot discover or request entry.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "My Virtual Office",
+      "url": "https://github.com/My-Virtual-Office"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8082",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Workspace",
+      "description": "Create, read, update, and archive workspaces. Manage the invite token."
+    },
+    {
+      "name": "Teams",
+      "description": "Named groups within a workspace (e.g. Engineering, Design). Used for member directory filtering."
+    },
+    {
+      "name": "Desks",
+      "description": "A Desk is a user's membership record and seat inside a workspace — it carries the workspace-specific profile, position, and presence state."
+    },
+    {
+      "name": "Invitations",
+      "description": "Invite users by email, accept/decline via token, and manage pending invitations."
+    },
+    {
+      "name": "Map Objects",
+      "description": "Persistent interactive assets on the 2D map (computers for screen-sharing, whiteboards for collaborative drawing). Position and IDs are stored here; live usage is tracked ephemerally by Colyseus."
+    },
+    {
+      "name": "Internal",
+      "description": "Server-to-server endpoints called exclusively by the SkyOffice/Colyseus real-time layer. Must be blocked at the gateway for external clients."
+    },
+    {
+      "name": "Health",
+      "description": "Service health check — no authentication required."
+    }
+  ],
+  "paths": {
+    "/api/workspace/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "description": "Returns `OK` if the service is running. No authentication required.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string", "example": "OK" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspace": {
+      "post": {
+        "tags": ["Workspace"],
+        "summary": "Create a workspace",
+        "description": "Creates a new workspace. The calling user becomes the OWNER and gets an owner Desk record in a single transaction. Returns 409 if the slug is already taken.",
+        "operationId": "createWorkspace",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateWorkspaceRequest" },
+              "example": {
+                "name": "Acme Corp HQ",
+                "slug": "acme-corp",
+                "description": "Our main virtual office",
+                "logo": "https://cdn.example.com/acme-logo.png",
+                "defaultTimezone": "America/New_York"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workspace created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkspaceResponse" }
+              }
+            }
+          },
+          "409": { "description": "Slug already taken" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{id}": {
+      "get": {
+        "tags": ["Workspace"],
+        "summary": "Get a workspace",
+        "description": "Returns full workspace details. Only accessible to workspace members (Desk.isActive = true).",
+        "operationId": "getWorkspace",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkspaceResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this workspace" },
+          "404": { "description": "Workspace not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "put": {
+        "tags": ["Workspace"],
+        "summary": "Update a workspace",
+        "description": "Updates workspace metadata and/or the 2D layout map. Requires ADMIN or OWNER role.",
+        "operationId": "updateWorkspace",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateWorkspaceRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkspaceResponse" }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Workspace not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "delete": {
+        "tags": ["Workspace"],
+        "summary": "Archive a workspace",
+        "description": "Sets workspace status to ARCHIVED. Only the OWNER can archive a workspace. This is a soft-archive — data is preserved.",
+        "operationId": "archiveWorkspace",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace archived",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkspaceResponse" }
+              }
+            }
+          },
+          "403": { "description": "Only the OWNER can archive a workspace" },
+          "404": { "description": "Workspace not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{id}/rotate-invite-token": {
+      "post": {
+        "tags": ["Workspace"],
+        "summary": "Rotate the invite token",
+        "description": "Generates a new invite token, invalidating the previous one. All previously shared invite links stop working. Requires ADMIN or OWNER role.",
+        "operationId": "rotateInviteToken",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "New invite token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inviteToken": { "type": "string", "format": "uuid", "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Workspace not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/teams": {
+      "post": {
+        "tags": ["Teams"],
+        "summary": "Create a team",
+        "description": "Creates a named team within the workspace. Requires ADMIN or OWNER role.",
+        "operationId": "createTeam",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateTeamRequest" },
+              "example": {
+                "name": "Engineering",
+                "description": "Product engineering team"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Team created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeamResponse" }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Workspace not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "get": {
+        "tags": ["Teams"],
+        "summary": "List teams",
+        "description": "Returns all teams in the workspace. Accessible to all active members.",
+        "operationId": "getTeams",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of teams",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/TeamResponse" }
+                }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this workspace" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/teams/{teamId}": {
+      "put": {
+        "tags": ["Teams"],
+        "summary": "Update a team",
+        "description": "Updates a team's name and/or description. Requires ADMIN or OWNER role.",
+        "operationId": "updateTeam",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "teamId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Team ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateTeamRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Team updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeamResponse" }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Team not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "delete": {
+        "tags": ["Teams"],
+        "summary": "Delete a team",
+        "description": "Removes a team. Desks referencing this team will have their teamId cleared. Requires ADMIN or OWNER role.",
+        "operationId": "deleteTeam",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "teamId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Team ID" }
+        ],
+        "responses": {
+          "200": { "description": "Team deleted" },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Team not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/desks": {
+      "get": {
+        "tags": ["Desks"],
+        "summary": "Get member directory",
+        "description": "Returns all active members of the workspace (Desk.isActive = true). Includes presence, status, and workspace-specific profiles.",
+        "operationId": "getMembers",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active member directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/DeskResponse" }
+                }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this workspace" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/desks/me": {
+      "get": {
+        "tags": ["Desks"],
+        "summary": "Get my desk",
+        "description": "Returns the authenticated user's own desk in this workspace.",
+        "operationId": "getMyDesk",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own desk details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeskResponse" }
+              }
+            }
+          },
+          "404": { "description": "No desk found for this user in this workspace" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/desks/{deskId}": {
+      "get": {
+        "tags": ["Desks"],
+        "summary": "Get a desk by ID",
+        "description": "Returns a specific member's desk. Accessible to all active workspace members.",
+        "operationId": "getDeskById",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "deskId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Desk ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Desk details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeskResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this workspace" },
+          "404": { "description": "Desk not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "put": {
+        "tags": ["Desks"],
+        "summary": "Update a desk",
+        "description": "Updates workspace-specific profile fields (name, title, bio, avatar, links, customization). A user can only update their own desk.",
+        "operationId": "updateDesk",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "deskId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Desk ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateDeskRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Desk updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeskResponse" }
+              }
+            }
+          },
+          "403": { "description": "Cannot update another member's desk" },
+          "404": { "description": "Desk not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "delete": {
+        "tags": ["Desks"],
+        "summary": "Remove a member",
+        "description": "Soft-deletes a desk (sets isActive = false), revoking the member's access to the workspace. Requires ADMIN or OWNER role.",
+        "operationId": "removeMember",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "deskId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Desk ID" }
+        ],
+        "responses": {
+          "200": { "description": "Member removed (desk deactivated)" },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Desk not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/desks/{deskId}/status": {
+      "patch": {
+        "tags": ["Desks"],
+        "summary": "Update presence status",
+        "description": "Sets the user's current status and optional status emoji. A user can only update their own status.",
+        "operationId": "updateDeskStatus",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "deskId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Desk ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateDeskStatusRequest" },
+              "example": {
+                "status": "FOCUS_MODE",
+                "statusEmoji": "🎧"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeskResponse" }
+              }
+            }
+          },
+          "403": { "description": "Cannot update another member's status" },
+          "404": { "description": "Desk not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/invitations": {
+      "post": {
+        "tags": ["Invitations"],
+        "summary": "Invite a member",
+        "description": "Sends an invitation to an email address. Creates a WorkspaceInvitation and a PENDING Desk in one transaction. Triggers a notification email. Returns 409 if this email already has a pending or accepted invitation in this workspace. Requires ADMIN or OWNER role.",
+        "operationId": "inviteMember",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/InviteMemberRequest" },
+              "example": {
+                "email": "jane.doe@example.com",
+                "role": "MEMBER"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invitation sent",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InvitationResponse" }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "409": { "description": "Email already invited or is already a member" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "get": {
+        "tags": ["Invitations"],
+        "summary": "List invitations",
+        "description": "Returns all invitations for the workspace (pending, accepted, declined, expired). Requires ADMIN or OWNER role.",
+        "operationId": "getInvitations",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of invitations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/InvitationResponse" }
+                }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/invitations/{id}": {
+      "delete": {
+        "tags": ["Invitations"],
+        "summary": "Revoke an invitation",
+        "description": "Cancels a pending invitation and deactivates the associated PENDING Desk. Requires ADMIN or OWNER role.",
+        "operationId": "revokeInvitation",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Invitation ID" }
+        ],
+        "responses": {
+          "200": { "description": "Invitation revoked" },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Invitation not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/invitations/accept": {
+      "post": {
+        "tags": ["Invitations"],
+        "summary": "Accept an invitation",
+        "description": "Accepts a workspace invitation using the token from the invite link. Validates that the token exists, belongs to the authenticated user's email, and has not expired or been declined. On success, activates the Desk and marks the invitation ACCEPTED.\n\n- 404: token not found\n- 410: token expired\n- 409: invitation already accepted or declined",
+        "operationId": "acceptInvitation",
+        "parameters": [
+          { "name": "token", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Invite token from the email link" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invitation accepted — desk activated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeskResponse" }
+              }
+            }
+          },
+          "404": { "description": "Invite token not found" },
+          "409": { "description": "Invitation already accepted or declined" },
+          "410": { "description": "Invite token has expired" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/invitations/decline": {
+      "post": {
+        "tags": ["Invitations"],
+        "summary": "Decline an invitation",
+        "description": "Declines a workspace invitation using the token from the invite link. Marks the invitation DECLINED and deactivates the associated PENDING Desk.",
+        "operationId": "declineInvitation",
+        "parameters": [
+          { "name": "token", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Invite token from the email link" }
+        ],
+        "responses": {
+          "200": { "description": "Invitation declined" },
+          "404": { "description": "Invite token not found" },
+          "409": { "description": "Invitation already accepted or declined" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/map-objects": {
+      "post": {
+        "tags": ["Map Objects"],
+        "summary": "Add a map object",
+        "description": "Places a new interactive asset (COMPUTER or WHITEBOARD) on the 2D map. A stable `roomId` (UUID) is auto-generated on creation — this is the Colyseus room ID for screen-sharing or collaborative drawing sessions. Requires ADMIN or OWNER role.",
+        "operationId": "createMapObject",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateMapObjectRequest" },
+              "example": {
+                "type": "WHITEBOARD",
+                "label": "Whiteboard A",
+                "positionX": 320,
+                "positionY": 480,
+                "capacity": 6
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Map object created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MapObjectResponse" }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "get": {
+        "tags": ["Map Objects"],
+        "summary": "List map objects",
+        "description": "Returns all active map objects in the workspace (isActive = true). Accessible to all active members.",
+        "operationId": "getMapObjects",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of active map objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/MapObjectResponse" }
+                }
+              }
+            }
+          },
+          "403": { "description": "Not a member of this workspace" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/map-objects/{id}": {
+      "put": {
+        "tags": ["Map Objects"],
+        "summary": "Update a map object",
+        "description": "Updates a map object's label, position, or capacity. The `roomId` and `type` are immutable after creation. Requires ADMIN or OWNER role.",
+        "operationId": "updateMapObject",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Map object ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateMapObjectRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Map object updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MapObjectResponse" }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Map object not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      },
+      "delete": {
+        "tags": ["Map Objects"],
+        "summary": "Delete a map object",
+        "description": "Permanently removes a map object from the workspace. Requires ADMIN or OWNER role.",
+        "operationId": "deleteMapObject",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Map object ID" }
+        ],
+        "responses": {
+          "200": { "description": "Map object deleted" },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Map object not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/workspace/{workspaceId}/map-objects/{id}/toggle": {
+      "patch": {
+        "tags": ["Map Objects"],
+        "summary": "Toggle map object active state",
+        "description": "Flips `isActive` on the map object — soft-disables it so it is hidden from the map without being permanently deleted. Requires ADMIN or OWNER role.",
+        "operationId": "toggleMapObject",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Map object ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "isActive toggled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MapObjectResponse" }
+              }
+            }
+          },
+          "403": { "description": "Insufficient role (requires ADMIN or OWNER)" },
+          "404": { "description": "Map object not found" }
+        },
+        "security": [{ "UserHeaders": [] }]
+      }
+    },
+    "/api/internal/workspace/{workspaceId}/session-config": {
+      "get": {
+        "tags": ["Internal"],
+        "summary": "Get session configuration (SkyOffice room boot)",
+        "description": "**Server-to-server only.** Returns everything the Colyseus server needs when creating a room for this workspace:\n- Workspace metadata (name, status, invite token)\n- All active member desks (positions, avatar characters, status)\n- All active map objects (computers, whiteboards with their roomIds and positions)\n\nCalled on Colyseus `onCreate` hook. Must be blocked at the gateway for external clients.",
+        "operationId": "getSessionConfig",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full session configuration",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SessionConfigResponse" }
+              }
+            }
+          },
+          "404": { "description": "Workspace not found or not ACTIVE" }
+        }
+      }
+    },
+    "/api/internal/workspace/{workspaceId}/presence": {
+      "post": {
+        "tags": ["Internal"],
+        "summary": "Sync presence from Colyseus",
+        "description": "**Server-to-server only.** Called by Colyseus on player join, leave, status change, or position update. Updates `Desk.isOnline`, `lastSeenAt`, `status`, `statusEmoji`, `positionX`, and `positionY`.\n\nCalled on Colyseus `onJoin`, `onLeave`, and status-change events. Must be blocked at the gateway for external clients.",
+        "operationId": "syncPresence",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Workspace ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PresenceSyncRequest" },
+              "example": {
+                "userId": 42,
+                "isOnline": true,
+                "status": "ACTIVE",
+                "statusEmoji": null,
+                "positionX": 256,
+                "positionY": 320
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Presence synced" },
+          "404": { "description": "Desk not found for this user in this workspace" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "UserHeaders": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-User-Id",
+        "description": "Numeric user ID injected by the API gateway after JWT validation. Also requires `X-User-Role: USER` or `X-User-Role: ADMIN`."
+      }
+    },
+    "schemas": {
+      "CreateWorkspaceRequest": {
+        "type": "object",
+        "required": ["name", "slug"],
+        "properties": {
+          "name": { "type": "string", "example": "Acme Corp HQ" },
+          "slug": { "type": "string", "description": "Unique URL slug — lowercase, hyphens allowed", "example": "acme-corp" },
+          "description": { "type": "string", "example": "Our main virtual office" },
+          "logo": { "type": "string", "format": "uri", "example": "https://cdn.example.com/acme-logo.png" },
+          "defaultTimezone": { "type": "string", "example": "America/New_York" }
+        }
+      },
+      "UpdateWorkspaceRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "example": "Acme Corp HQ" },
+          "description": { "type": "string" },
+          "logo": { "type": "string", "format": "uri" },
+          "defaultTimezone": { "type": "string", "example": "Europe/London" },
+          "layoutMap": {
+            "type": "object",
+            "description": "JSON document defining the 2D spatial floorplan (walls, zones, furniture). Hierarchical — queried as a whole, never column-by-column.",
+            "additionalProperties": true,
+            "example": { "width": 1024, "height": 768, "zones": [] }
+          }
+        }
+      },
+      "WorkspaceResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 1 },
+          "name": { "type": "string", "example": "Acme Corp HQ" },
+          "slug": { "type": "string", "example": "acme-corp" },
+          "ownerId": { "type": "integer", "format": "int64", "example": 42 },
+          "description": { "type": "string", "example": "Our main virtual office" },
+          "logo": { "type": "string", "format": "uri" },
+          "layoutMap": { "type": "object", "additionalProperties": true },
+          "status": { "$ref": "#/components/schemas/WorkspaceStatus" },
+          "visibility": { "type": "string", "enum": ["INVITE_ONLY"], "example": "INVITE_ONLY" },
+          "inviteToken": { "type": "string", "format": "uuid", "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890" },
+          "defaultTimezone": { "type": "string", "example": "America/New_York" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateTeamRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "example": "Engineering" },
+          "description": { "type": "string", "example": "Product engineering team" }
+        }
+      },
+      "TeamResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 10 },
+          "workspaceId": { "type": "integer", "format": "int64", "example": 1 },
+          "name": { "type": "string", "example": "Engineering" },
+          "description": { "type": "string", "example": "Product engineering team" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UpdateDeskRequest": {
+        "type": "object",
+        "properties": {
+          "fullName": { "type": "string", "example": "John Doe" },
+          "nickName": { "type": "string", "example": "JD" },
+          "title": { "type": "string", "example": "Senior Engineer" },
+          "bio": { "type": "string", "example": "Building the future, one commit at a time." },
+          "workEmail": { "type": "string", "format": "email", "example": "john@acme.com" },
+          "phone": { "type": "string", "example": "+1234567890" },
+          "avatarCharacter": { "$ref": "#/components/schemas/AvatarCharacter" },
+          "timezone": { "type": "string", "example": "America/Chicago" },
+          "teamId": { "type": "integer", "format": "int64", "example": 10 },
+          "links": {
+            "type": "array",
+            "items": { "type": "string", "format": "uri" },
+            "description": "Social/profile URLs stored in a child table",
+            "example": ["https://github.com/johndoe", "https://linkedin.com/in/johndoe"]
+          },
+          "deskCustomization": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "User-defined widgets and quick-access links. Intentional JSON — structure is user-defined and variable."
+          }
+        }
+      },
+      "UpdateDeskStatusRequest": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "$ref": "#/components/schemas/DeskStatus" },
+          "statusEmoji": { "type": "string", "example": "🎧", "description": "Optional emoji for CUSTOM status" }
+        }
+      },
+      "DeskResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 100 },
+          "userId": { "type": "integer", "format": "int64", "example": 42 },
+          "workspaceId": { "type": "integer", "format": "int64", "example": 1 },
+          "fullName": { "type": "string", "example": "John Doe" },
+          "nickName": { "type": "string", "example": "JD" },
+          "title": { "type": "string", "example": "Senior Engineer" },
+          "bio": { "type": "string", "example": "Building the future, one commit at a time." },
+          "workEmail": { "type": "string", "format": "email" },
+          "phone": { "type": "string", "example": "+1234567890" },
+          "personalImage": { "type": "string", "format": "uri" },
+          "avatarCharacter": { "$ref": "#/components/schemas/AvatarCharacter" },
+          "timezone": { "type": "string", "example": "America/New_York" },
+          "status": { "$ref": "#/components/schemas/DeskStatus" },
+          "statusEmoji": { "type": "string", "example": "🎧" },
+          "positionX": { "type": "integer", "example": 256 },
+          "positionY": { "type": "integer", "example": 320 },
+          "isOnline": { "type": "boolean", "example": true },
+          "lastSeenAt": { "type": "string", "format": "date-time" },
+          "role": { "$ref": "#/components/schemas/WorkspaceRole" },
+          "teamId": { "type": "integer", "format": "int64", "example": 10 },
+          "inviteStatus": { "$ref": "#/components/schemas/InviteStatus" },
+          "isActive": { "type": "boolean", "example": true },
+          "joinedAt": { "type": "string", "format": "date-time" },
+          "links": {
+            "type": "array",
+            "items": { "type": "string", "format": "uri" },
+            "example": ["https://github.com/johndoe"]
+          },
+          "deskCustomization": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "InviteMemberRequest": {
+        "type": "object",
+        "required": ["email", "role"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "example": "jane.doe@example.com" },
+          "role": {
+            "type": "string",
+            "enum": ["ADMIN", "MEMBER", "GUEST"],
+            "example": "MEMBER",
+            "description": "Role to assign on acceptance. OWNER cannot be assigned via invitation."
+          }
+        }
+      },
+      "InvitationResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 200 },
+          "workspaceId": { "type": "integer", "format": "int64", "example": 1 },
+          "invitedEmail": { "type": "string", "format": "email", "example": "jane.doe@example.com" },
+          "invitedBy": { "type": "integer", "format": "int64", "example": 42 },
+          "role": { "$ref": "#/components/schemas/WorkspaceRole" },
+          "status": { "$ref": "#/components/schemas/InviteStatus" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateMapObjectRequest": {
+        "type": "object",
+        "required": ["type", "label", "positionX", "positionY"],
+        "properties": {
+          "type": { "$ref": "#/components/schemas/MapObjectType" },
+          "label": { "type": "string", "example": "Whiteboard A" },
+          "positionX": { "type": "integer", "example": 320 },
+          "positionY": { "type": "integer", "example": 480 },
+          "capacity": { "type": "integer", "example": 6, "default": 4, "description": "Max concurrent users allowed on this object" }
+        }
+      },
+      "UpdateMapObjectRequest": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string", "example": "Main Whiteboard" },
+          "positionX": { "type": "integer", "example": 400 },
+          "positionY": { "type": "integer", "example": 500 },
+          "capacity": { "type": "integer", "example": 8 }
+        }
+      },
+      "MapObjectResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 50 },
+          "workspaceId": { "type": "integer", "format": "int64", "example": 1 },
+          "type": { "$ref": "#/components/schemas/MapObjectType" },
+          "label": { "type": "string", "example": "Whiteboard A" },
+          "positionX": { "type": "integer", "example": 320 },
+          "positionY": { "type": "integer", "example": 480 },
+          "roomId": {
+            "type": "string",
+            "format": "uuid",
+            "example": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+            "description": "Stable Colyseus room ID for this object's session. Auto-generated on creation."
+          },
+          "capacity": { "type": "integer", "example": 6 },
+          "isActive": { "type": "boolean", "example": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SessionConfigResponse": {
+        "type": "object",
+        "description": "Full configuration payload loaded by Colyseus on room boot.",
+        "properties": {
+          "workspace": { "$ref": "#/components/schemas/WorkspaceResponse" },
+          "desks": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DeskResponse" },
+            "description": "All active member desks (isActive = true)"
+          },
+          "mapObjects": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MapObjectResponse" },
+            "description": "All active map objects (isActive = true)"
+          }
+        }
+      },
+      "PresenceSyncRequest": {
+        "type": "object",
+        "required": ["userId", "isOnline"],
+        "properties": {
+          "userId": { "type": "integer", "format": "int64", "example": 42 },
+          "isOnline": { "type": "boolean", "example": true },
+          "status": { "$ref": "#/components/schemas/DeskStatus" },
+          "statusEmoji": { "type": "string", "example": "🎧", "nullable": true },
+          "positionX": { "type": "integer", "example": 256, "nullable": true },
+          "positionY": { "type": "integer", "example": 320, "nullable": true }
+        }
+      },
+      "WorkspaceStatus": {
+        "type": "string",
+        "enum": ["ACTIVE", "ARCHIVED", "SUSPENDED"],
+        "example": "ACTIVE"
+      },
+      "WorkspaceRole": {
+        "type": "string",
+        "enum": ["OWNER", "ADMIN", "MEMBER", "GUEST"],
+        "example": "MEMBER"
+      },
+      "DeskStatus": {
+        "type": "string",
+        "enum": ["ACTIVE", "AWAY", "DO_NOT_DISTURB", "FOCUS_MODE", "CUSTOM"],
+        "example": "ACTIVE"
+      },
+      "InviteStatus": {
+        "type": "string",
+        "enum": ["PENDING", "ACCEPTED", "DECLINED", "EXPIRED"],
+        "example": "PENDING"
+      },
+      "MapObjectType": {
+        "type": "string",
+        "enum": ["COMPUTER", "WHITEBOARD"],
+        "example": "WHITEBOARD"
+      },
+      "AvatarCharacter": {
+        "type": "string",
+        "enum": ["ADAM", "ASH", "LUCY", "NANCY"],
+        "example": "ADAM",
+        "description": "Character skin for the 2D sprite. Sprites are bundled in the SkyOffice client; backend stores the key only."
+      }
+    }
+  }
+}
