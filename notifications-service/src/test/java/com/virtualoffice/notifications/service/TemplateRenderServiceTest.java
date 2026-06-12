@@ -125,26 +125,24 @@ class TemplateRenderServiceTest {
         // The renderer uses String.replace, not replaceAll, so $ and \ in
         // values must not be interpreted as regex replacement metachars.
         String result = renderer.render(EmailTemplate.LOGIN_SUCCESS, Map.of(
-                "firstName", "K$h\al",
+                "firstName", "K$h\\al",
                 "loginAt", "2026-05-16 14:00",
                 "ip", "1.2.3.4",
                 "userAgent", "agent"
         ));
 
-        assertThat(result).contains("K$h\al");
+        assertThat(result).contains("K$h\\al");
     }
 
     @Test
     void multilineValuesAreSubstitutedAsIs() {
         String result = renderer.render(EmailTemplate.LOGIN_SUCCESS, Map.of(
                 "firstName", "Khaled",
-                "loginAt", "2026-05-16
-14:00",
+                "loginAt", "2026-05-16\n14:00",
                 "ip", "1.2.3.4",
                 "userAgent", "agent"
         ));
 
-        assertThat(result).contains("2026-05-16
-14:00");
+        assertThat(result).contains("2026-05-16\n14:00");
     }
 }

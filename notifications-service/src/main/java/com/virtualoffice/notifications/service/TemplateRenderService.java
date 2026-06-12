@@ -33,8 +33,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class TemplateRenderService {
 
-    private static final Pattern UNRESOLVED_PLACEHOLDER = Pattern.compile("\{\{[^}]+}}");
-
+    private static final Pattern UNRESOLVED_PLACEHOLDER = Pattern.compile("\\{\\{[^}]+}}");
     public String render(EmailTemplate template, Map<String, String> vars) {
         Map<String, String> safeVars = vars != null ? vars : Map.of();
 
