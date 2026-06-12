@@ -107,7 +107,7 @@ public class MessageController {
 
         // null means already-deleted — skip the broadcast
         if (deleted != null) {
-            broadcastDeleteEvent(deleted, id);
+            broadcastDeleteEvent(deleted);
         }
 
         return ResponseEntity.ok().build();
@@ -122,9 +122,9 @@ public class MessageController {
         }
     }
 
-    private void broadcastDeleteEvent(MessageResponse deleted, String messageId) {
+    private void broadcastDeleteEvent(MessageResponse deleted) {
         WebSocketEvent<Map<String, String>> event = WebSocketEvent.of(
-                WebSocketEvent.DELETE_MESSAGE, Map.of("messageId", messageId));
+                WebSocketEvent.DELETE_MESSAGE, Map.of("messageId", deleted.getId()));
         messagingTemplate.convertAndSend("/topic/channel/" + deleted.getChannelId(), event);
         if (deleted.getThreadId() != null) {
             messagingTemplate.convertAndSend("/topic/thread/" + deleted.getThreadId(), event);

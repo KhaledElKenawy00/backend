@@ -199,6 +199,24 @@ class ThreadControllerTest {
             java.util.Map<String, String> payload = (java.util.Map<String, String>) event.getPayload();
             assertThat(payload).containsEntry("threadId", "t1").containsEntry("channelId", "ch1");
         }
+
+        @Test
+        void shouldBroadcastUsingCanonicalThreadId() {
+            HttpServletRequest httpRequest = mockRequest("10", "ADMIN");
+            ThreadResponse thread = ThreadResponse.builder().id("t1").channelId("ch1").build();
+            when(threadService.getThread("T1")).thenReturn(thread);
+
+            controller.deleteThread("T1", httpRequest);
+
+            verify(messagingTemplate).convertAndSend(eq("/topic/thread/t1"), any(WebSocketEvent.class));
+            verify(messagingTemplate, never()).convertAndSend(eq("/topic/thread/T1"), any(WebSocketEvent.class));
+
+            org.mockito.ArgumentCaptor<WebSocketEvent> captor = org.mockito.ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), captor.capture());
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> payload = (java.util.Map<String, String>) captor.getValue().getPayload();
+            assertThat(payload).containsEntry("threadId", "t1");
+        }
     }
 
     // ────────────────────────────────────────

@@ -20,11 +20,14 @@ package com.virtualoffice.chat_service.service.impl;
 import com.virtualoffice.chat_service.dto.request.SendMessageRequest;
 import com.virtualoffice.chat_service.dto.response.MessageResponse;
 import com.virtualoffice.chat_service.dto.response.PaginatedResponse;
+import com.virtualoffice.chat_service.model.ChatThread;
 import com.virtualoffice.chat_service.model.Message;
 import com.virtualoffice.chat_service.model.MessageType;
 import com.virtualoffice.chat_service.repository.MessageRepository;
+import com.virtualoffice.chat_service.repository.ThreadRepository;
 import com.virtualoffice.chat_service.service.ChannelService;
 import org.bson.types.ObjectId;
+import org.springframework.dao.DuplicateKeyException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -57,6 +60,9 @@ class MessageServiceImplTest {
 
     @Mock
     private ChannelService channelService;
+
+    @Mock
+    private ThreadRepository threadRepository;
 
     @InjectMocks
     private MessageServiceImpl messageService;
@@ -162,6 +168,20 @@ class MessageServiceImplTest {
             ObjectId replyToId = new ObjectId();
 
             when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            ChatThread thread = ChatThread.builder()
+                    .id(threadId)
+                    .channelId(channelId)
+                    .deleted(false)
+                    .build();
+            when(threadRepository.findActiveById(threadId)).thenReturn(Optional.of(thread));
+            Message replyTarget = Message.builder()
+                    .id(replyToId)
+                    .channelId(channelId)
+                    .senderId(20)
+                    .type(MessageType.TEXT)
+                    .deleted(false)
+                    .build();
+            when(messageRepository.findById(replyToId)).thenReturn(Optional.of(replyTarget));
             when(messageRepository.save(any(Message.class))).thenAnswer(inv -> {
                 Message m = inv.getArgument(0);
                 m.setId(new ObjectId());
@@ -293,6 +313,115 @@ class MessageServiceImplTest {
             messageService.sendMessage(channelId.toHexString(), request, 10, "USER");
 
             verify(messageRepository, never()).findBySenderIdAndClientMessageId(anyInt(), any());
+        }
+
+        @Test
+        void shouldRejectMessageWhenThreadDoesNotExist() {
+            when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            ObjectId threadId = new ObjectId();
+            when(threadRepository.findActiveById(threadId)).thenReturn(Optional.empty());
+
+            SendMessageRequest request = SendMessageRequest.builder()
+                    .content("x")
+                    .threadId(threadId.toHexString())
+                    .build();
+
+            assertThatThrownBy(() -> messageService.sendMessage(channelId.toHexString(), request, 10, "USER"))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("thread not found");
+            verify(messageRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldRejectMessageWhenThreadBelongsToAnotherChannel() {
+            when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            ObjectId threadId = new ObjectId();
+            ChatThread thread = ChatThread.builder()
+                    .id(threadId)
+                    .channelId(new ObjectId())
+                    .deleted(false)
+                    .build();
+            when(threadRepository.findActiveById(threadId)).thenReturn(Optional.of(thread));
+
+            SendMessageRequest request = SendMessageRequest.builder()
+                    .content("x")
+                    .threadId(threadId.toHexString())
+                    .build();
+
+            assertThatThrownBy(() -> messageService.sendMessage(channelId.toHexString(), request, 10, "USER"))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("does not belong to this channel");
+            verify(messageRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldAcceptMessageWhenThreadBelongsToChannel() {
+            when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            ObjectId threadId = new ObjectId();
+            ChatThread thread = ChatThread.builder()
+                    .id(threadId)
+                    .channelId(channelId)
+                    .deleted(false)
+                    .build();
+            when(threadRepository.findActiveById(threadId)).thenReturn(Optional.of(thread));
+            when(messageRepository.save(any(Message.class))).thenAnswer(inv -> {
+                Message m = inv.getArgument(0);
+                m.setId(new ObjectId());
+                return m;
+            });
+
+            SendMessageRequest request = SendMessageRequest.builder()
+                    .content("x")
+                    .threadId(threadId.toHexString())
+                    .build();
+
+            MessageResponse response = messageService.sendMessage(channelId.toHexString(), request, 10, "USER");
+
+            assertThat(response.getThreadId()).isEqualTo(threadId.toHexString());
+        }
+
+        @Test
+        void shouldRejectReplyToIdFromAnotherChannel() {
+            when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            ObjectId replyId = new ObjectId();
+            Message replyTarget = Message.builder()
+                    .id(replyId)
+                    .channelId(new ObjectId())
+                    .senderId(20)
+                    .type(MessageType.TEXT)
+                    .deleted(false)
+                    .build();
+            when(messageRepository.findById(replyId)).thenReturn(Optional.of(replyTarget));
+
+            SendMessageRequest request = SendMessageRequest.builder()
+                    .content("x")
+                    .replyToId(replyId.toHexString())
+                    .build();
+
+            assertThatThrownBy(() -> messageService.sendMessage(channelId.toHexString(), request, 10, "USER"))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("replyToId");
+            verify(messageRepository, never()).save(any());
+        }
+
+        @Test
+        void shouldReturnExistingMessageWhenDuplicateKeyOnConcurrentRetry() {
+            when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            when(messageRepository.findBySenderIdAndClientMessageId(10, "uuid-race"))
+                    .thenReturn(Optional.empty())
+                    .thenReturn(Optional.of(existingMessage));
+            when(messageRepository.save(any(Message.class)))
+                    .thenThrow(new DuplicateKeyException("idx_sender_clientMsgId dup"));
+
+            SendMessageRequest request = SendMessageRequest.builder()
+                    .content("retry")
+                    .clientMessageId("uuid-race")
+                    .build();
+
+            MessageResponse response = messageService.sendMessage(channelId.toHexString(), request, 10, "USER");
+
+            assertThat(response.getId()).isEqualTo(messageId.toHexString());
+            verify(messageRepository, times(2)).findBySenderIdAndClientMessageId(10, "uuid-race");
         }
     }
 

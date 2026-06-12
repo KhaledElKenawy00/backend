@@ -30,6 +30,7 @@ import com.virtualoffice.chat_service.service.ThreadCleanupService;
 import com.virtualoffice.chat_service.service.ThreadService;
 import lombok.RequiredArgsConstructor;
 import org.bson.types.ObjectId;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -87,8 +88,12 @@ public class ThreadServiceImpl implements ThreadService {
                 .updatedAt(now)
                 .build();
 
-        ChatThread saved = threadRepository.save(thread);
-        return DtoMapper.toThreadResponse(saved);
+        try {
+            ChatThread saved = threadRepository.save(thread);
+            return DtoMapper.toThreadResponse(saved);
+        } catch (DuplicateKeyException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "a thread already exists for this message");
+        }
     }
 
     @Override

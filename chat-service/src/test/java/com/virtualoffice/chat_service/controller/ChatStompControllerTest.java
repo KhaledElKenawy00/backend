@@ -20,8 +20,11 @@ package com.virtualoffice.chat_service.controller;
 import com.virtualoffice.chat_service.dto.request.StompSendMessage;
 import com.virtualoffice.chat_service.dto.request.StompTypingEvent;
 import com.virtualoffice.chat_service.dto.response.MessageResponse;
+import com.virtualoffice.chat_service.dto.response.ThreadResponse;
 import com.virtualoffice.chat_service.dto.response.WebSocketEvent;
+import com.virtualoffice.chat_service.service.ChannelService;
 import com.virtualoffice.chat_service.service.MessageService;
+import com.virtualoffice.chat_service.service.ThreadService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -53,6 +56,12 @@ class ChatStompControllerTest {
 
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+
+    @Mock
+    private ChannelService channelService;
+
+    @Mock
+    private ThreadService threadService;
 
     @InjectMocks
     private ChatStompController controller;
@@ -129,6 +138,29 @@ class ChatStompControllerTest {
 
             verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
             verify(messagingTemplate, never()).convertAndSend(startsWith("/topic/thread/"), any(WebSocketEvent.class));
+        }
+
+        @Test
+        void shouldBroadcastUsingCanonicalIdsFromSavedMessage() {
+            StompSendMessage payload = StompSendMessage.builder()
+                    .channelId("CH1")
+                    .content("hi")
+                    .threadId("T1")
+                    .build();
+            MessageResponse saved = MessageResponse.builder()
+                    .id("msg1")
+                    .channelId("ch1")
+                    .threadId("t1")
+                    .content("hi")
+                    .build();
+            when(messageService.sendMessage(eq("CH1"), any(), eq(10), eq("USER"))).thenReturn(saved);
+
+            controller.handleSendMessage(payload, headerAccessor);
+
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), any(WebSocketEvent.class));
+            verify(messagingTemplate).convertAndSend(eq("/topic/thread/t1"), any(WebSocketEvent.class));
+            verify(messagingTemplate, never()).convertAndSend(eq("/topic/channel/CH1"), any(WebSocketEvent.class));
+            verify(messagingTemplate, never()).convertAndSend(eq("/topic/thread/T1"), any(WebSocketEvent.class));
         }
 
         @Test
@@ -307,6 +339,7 @@ class ChatStompControllerTest {
 
         @Test
         void shouldBroadcastTypingToChannel() {
+            when(channelService.isMember("ch1", 10)).thenReturn(true);
             StompTypingEvent payload = StompTypingEvent.builder()
                     .channelId("ch1")
                     .typing(true)
@@ -319,6 +352,9 @@ class ChatStompControllerTest {
 
         @Test
         void shouldBroadcastTypingToThread() {
+            when(threadService.getThread("t1")).thenReturn(
+                    ThreadResponse.builder().id("t1").channelId("ch1").build());
+            when(channelService.isMember("ch1", 10)).thenReturn(true);
             StompTypingEvent payload = StompTypingEvent.builder()
                     .channelId("ch1")
                     .threadId("t1")
@@ -344,6 +380,7 @@ class ChatStompControllerTest {
 
         @Test
         void shouldIncludeUserIdInNotification() {
+            when(channelService.isMember("ch1", 10)).thenReturn(true);
             StompTypingEvent payload = StompTypingEvent.builder()
                     .channelId("ch1")
                     .typing(false)
@@ -354,6 +391,51 @@ class ChatStompControllerTest {
             ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
             verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1/typing"), captor.capture());
             assertThat(captor.getValue().getAction()).isEqualTo("TYPING");
+        }
+
+        @Test
+        void shouldDropTypingWhenNotMember() {
+            when(channelService.isMember("ch1", 10)).thenReturn(false);
+
+            StompTypingEvent payload = StompTypingEvent.builder()
+                    .channelId("ch1")
+                    .typing(true)
+                    .build();
+
+            controller.handleTyping(payload, headerAccessor);
+
+            verifyNoInteractions(messagingTemplate);
+        }
+
+        @Test
+        void shouldDropTypingWhenChannelIdMalformed() {
+            when(channelService.isMember("bad-id", 10))
+                    .thenThrow(new IllegalArgumentException("invalid hexadecimal representation"));
+
+            StompTypingEvent payload = StompTypingEvent.builder()
+                    .channelId("bad-id")
+                    .typing(true)
+                    .build();
+
+            controller.handleTyping(payload, headerAccessor);
+
+            verifyNoInteractions(messagingTemplate);
+        }
+
+        @Test
+        void shouldDropThreadTypingWhenThreadNotInClaimedChannel() {
+            when(threadService.getThread("t1")).thenReturn(
+                    ThreadResponse.builder().id("t1").channelId("other").build());
+
+            StompTypingEvent payload = StompTypingEvent.builder()
+                    .channelId("ch1")
+                    .threadId("t1")
+                    .typing(true)
+                    .build();
+
+            controller.handleTyping(payload, headerAccessor);
+
+            verifyNoInteractions(messagingTemplate);
         }
     }
 

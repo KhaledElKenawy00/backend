@@ -290,5 +290,21 @@ class MessageControllerTest {
 
             verifyNoInteractions(messagingTemplate);
         }
+
+        @Test
+        void shouldEmitCanonicalMessageIdInDeletePayload() {
+            HttpServletRequest httpRequest = mockRequest("10", "USER");
+            MessageResponse deleted = MessageResponse.builder()
+                    .id("msg1").channelId("ch1").threadId(null).deleted(true).build();
+            when(messageService.deleteMessage("MSG1", 10, "USER")).thenReturn(deleted);
+
+            controller.deleteMessage("MSG1", httpRequest);
+
+            org.mockito.ArgumentCaptor<WebSocketEvent> captor = org.mockito.ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(messagingTemplate).convertAndSend(eq("/topic/channel/ch1"), captor.capture());
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> payload = (java.util.Map<String, String>) captor.getValue().getPayload();
+            assertThat(payload).containsEntry("messageId", "msg1");
+        }
     }
 }

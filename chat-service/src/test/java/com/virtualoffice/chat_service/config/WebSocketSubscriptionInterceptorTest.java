@@ -273,6 +273,56 @@ class WebSocketSubscriptionInterceptorTest {
     }
 
     // ────────────────────────────────────────
+    // SEND frame authorization (clients may only send to /app/**)
+    // ────────────────────────────────────────
+
+    @Nested
+    class SendAuthorization {
+
+        private Message<?> buildSendMessage(String destination, String sessionId) {
+            StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+            accessor.setDestination(destination);
+            Map<String, Object> sessionAttrs = new HashMap<>();
+            sessionAttrs.put("userId", 10);
+            accessor.setSessionAttributes(sessionAttrs);
+            accessor.setSessionId(sessionId);
+            return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+        }
+
+        @Test
+        void shouldRejectSendToTopicDestination() {
+            setup();
+            Message<?> msg = buildSendMessage("/topic/channel/" + new ObjectId().toHexString(), "sess-send");
+
+            Message<?> result = interceptor.preSend(msg, messageChannel);
+
+            assertThat(result).isNull();
+            assertErrorEnvelope("INVALID_PAYLOAD", "sess-send");
+        }
+
+        @Test
+        void shouldRejectSendToQueueDestination() {
+            setup();
+            Message<?> msg = buildSendMessage("/queue/errors", "sess-q");
+
+            Message<?> result = interceptor.preSend(msg, messageChannel);
+
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void shouldAllowSendToAppDestination() {
+            setup();
+            Message<?> msg = buildSendMessage("/app/chat/send", "sess-app");
+
+            Message<?> result = interceptor.preSend(msg, messageChannel);
+
+            assertThat(result).isNotNull();
+            verifyNoInteractions(messagingTemplate);
+        }
+    }
+
+    // ────────────────────────────────────────
     // thread subscription validation
     // ────────────────────────────────────────
 

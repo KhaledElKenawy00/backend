@@ -97,14 +97,16 @@ public class ThreadController {
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
 
         // capture channelId before delete so we can address the channel topic
-        String channelId = threadService.getThread(threadId).getChannelId();
+        ThreadResponse thread = threadService.getThread(threadId);
+        String channelId = thread.getChannelId();
+        String canonicalThreadId = thread.getId();
         threadService.deleteThread(threadId, user.getUserId(), user.getRole());
 
         WebSocketEvent<Map<String, String>> event = WebSocketEvent.of(
                 WebSocketEvent.THREAD_DELETED,
-                Map.of("threadId", threadId, "channelId", channelId));
+                Map.of("threadId", canonicalThreadId, "channelId", channelId));
         messagingTemplate.convertAndSend("/topic/channel/" + channelId, event);
-        messagingTemplate.convertAndSend("/topic/thread/" + threadId, event);
+        messagingTemplate.convertAndSend("/topic/thread/" + canonicalThreadId, event);
 
         return ResponseEntity.ok().build();
     }
