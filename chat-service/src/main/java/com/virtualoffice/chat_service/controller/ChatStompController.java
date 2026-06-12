@@ -21,9 +21,12 @@ import com.virtualoffice.chat_service.dto.request.SendMessageRequest;
 import com.virtualoffice.chat_service.dto.request.StompSendMessage;
 import com.virtualoffice.chat_service.dto.request.StompTypingEvent;
 import com.virtualoffice.chat_service.dto.response.MessageResponse;
+import com.virtualoffice.chat_service.dto.response.ThreadResponse;
 import com.virtualoffice.chat_service.dto.response.TypingNotification;
 import com.virtualoffice.chat_service.dto.response.WebSocketEvent;
+import com.virtualoffice.chat_service.service.ChannelService;
 import com.virtualoffice.chat_service.service.MessageService;
+import com.virtualoffice.chat_service.service.ThreadService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
@@ -43,6 +46,8 @@ public class ChatStompController {
 
     private final MessageService messageService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ChannelService channelService;
+    private final ThreadService threadService;
 
     @MessageMapping("/chat/send")
     public void handleSendMessage(StompSendMessage payload, SimpMessageHeaderAccessor headerAccessor) {
@@ -71,10 +76,9 @@ public class ChatStompController {
             MessageResponse saved = messageService.sendMessage(payload.getChannelId(), request, userId, role);
             WebSocketEvent<MessageResponse> event = WebSocketEvent.of(WebSocketEvent.NEW_MESSAGE, saved);
 
-            // thread messages broadcast to both topics so channel subscribers see thread activity too
-            messagingTemplate.convertAndSend("/topic/channel/" + payload.getChannelId(), event);
-            if (payload.getThreadId() != null) {
-                messagingTemplate.convertAndSend("/topic/thread/" + payload.getThreadId(), event);
+            messagingTemplate.convertAndSend("/topic/channel/" + saved.getChannelId(), event);
+            if (saved.getThreadId() != null) {
+                messagingTemplate.convertAndSend("/topic/thread/" + saved.getThreadId(), event);
             }
         } catch (ResponseStatusException e) {
             sendErrorToUser(headerAccessor, mapStatusToCode(e), e.getReason());
@@ -91,6 +95,25 @@ public class ChatStompController {
     public void handleTyping(StompTypingEvent payload, SimpMessageHeaderAccessor headerAccessor) {
         Integer userId = readUserId(headerAccessor);
         if (userId == null || payload.getChannelId() == null) {
+            return;
+        }
+
+        if (payload.getThreadId() != null) {
+            try {
+                ThreadResponse thread = threadService.getThread(payload.getThreadId());
+                if (!thread.getChannelId().equals(payload.getChannelId())) {
+                    return;
+                }
+            } catch (ResponseStatusException | IllegalArgumentException e) {
+                return;
+            }
+        }
+
+        try {
+            if (!channelService.isMember(payload.getChannelId(), userId)) {
+                return;
+            }
+        } catch (IllegalArgumentException e) {
             return;
         }
 

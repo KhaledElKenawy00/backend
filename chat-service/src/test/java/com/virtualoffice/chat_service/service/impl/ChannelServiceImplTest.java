@@ -188,6 +188,32 @@ class ChannelServiceImplTest {
             assertThatThrownBy(() -> channelService.createGroupChannel(request, 10))
                     .isInstanceOf(DuplicateKeyException.class);
         }
+
+        @Test
+        void shouldDeduplicateAndDropNullMembers() {
+            List<Integer> members = new ArrayList<>();
+            members.add(20);
+            members.add(20);
+            members.add(null);
+            CreateChannelRequest request = CreateChannelRequest.builder()
+                    .name("dedup")
+                    .workspaceId(1)
+                    .members(members)
+                    .build();
+            when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> {
+                Channel ch = inv.getArgument(0);
+                ch.setId(new ObjectId());
+                return ch;
+            });
+
+            channelService.createGroupChannel(request, 10);
+
+            ArgumentCaptor<Channel> captor = ArgumentCaptor.forClass(Channel.class);
+            verify(channelRepository).save(captor.capture());
+            List<Integer> saved = captor.getValue().getMembers();
+            assertThat(saved).containsExactlyInAnyOrder(10, 20);
+            assertThat(saved).doesNotContainNull();
+        }
     }
 
     // ────────────────────────────────────────
@@ -263,8 +289,8 @@ class ChannelServiceImplTest {
 
             channelService.joinChannel(channelId.toHexString(), 30);
 
-            assertThat(groupChannel.getMembers()).contains(30);
-            verify(channelRepository).save(groupChannel);
+            verify(channelRepository).addMember(eq(channelId), eq(30), any(Instant.class));
+            verify(channelRepository, never()).save(any(Channel.class));
         }
 
         @Test
@@ -273,7 +299,7 @@ class ChannelServiceImplTest {
 
             channelService.joinChannel(channelId.toHexString(), 10);
 
-            // should not save since user is already a member
+            verify(channelRepository, never()).addMember(any(ObjectId.class), anyInt(), any(Instant.class));
             verify(channelRepository, never()).save(any());
         }
 
@@ -294,6 +320,15 @@ class ChannelServiceImplTest {
                     .isInstanceOf(ResponseStatusException.class)
                     .hasMessageContaining("channel not found");
         }
+
+        @Test
+        void shouldNotPersistEntireDocumentOnJoin() {
+            when(channelRepository.findById(channelId)).thenReturn(Optional.of(groupChannel));
+
+            channelService.joinChannel(channelId.toHexString(), 30);
+
+            verify(channelRepository, never()).save(any(Channel.class));
+        }
     }
 
     // ────────────────────────────────────────
@@ -309,9 +344,9 @@ class ChannelServiceImplTest {
 
             channelService.leaveChannel(channelId.toHexString(), 20);
 
-            assertThat(groupChannel.getMembers()).doesNotContain(20);
-            verify(channelRepository).save(groupChannel);
-            verify(channelRepository, never()).delete(any(Channel.class));
+            verify(channelRepository).removeMember(eq(channelId), eq(20), any(Instant.class));
+            verify(channelRepository).deleteIfEmpty(channelId);
+            verify(channelRepository, never()).save(any(Channel.class));
         }
 
         @Test
@@ -331,7 +366,8 @@ class ChannelServiceImplTest {
 
             channelService.leaveChannel(channelId.toHexString(), 10);
 
-            verify(channelRepository).delete(solo);
+            verify(channelRepository).removeMember(eq(channelId), eq(10), any(Instant.class));
+            verify(channelRepository).deleteIfEmpty(channelId);
             verify(channelRepository, never()).save(any(Channel.class));
         }
 
@@ -360,6 +396,15 @@ class ChannelServiceImplTest {
             assertThatThrownBy(() -> channelService.leaveChannel(new ObjectId().toHexString(), 10))
                     .isInstanceOf(ResponseStatusException.class)
                     .hasMessageContaining("channel not found");
+        }
+
+        @Test
+        void shouldNotPersistEntireDocumentOnLeave() {
+            when(channelRepository.findById(channelId)).thenReturn(Optional.of(groupChannel));
+
+            channelService.leaveChannel(channelId.toHexString(), 20);
+
+            verify(channelRepository, never()).save(any(Channel.class));
         }
     }
 

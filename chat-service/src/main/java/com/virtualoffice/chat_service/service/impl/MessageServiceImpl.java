@@ -21,13 +21,16 @@ import com.virtualoffice.chat_service.dto.mapper.DtoMapper;
 import com.virtualoffice.chat_service.dto.request.SendMessageRequest;
 import com.virtualoffice.chat_service.dto.response.MessageResponse;
 import com.virtualoffice.chat_service.dto.response.PaginatedResponse;
+import com.virtualoffice.chat_service.model.ChatThread;
 import com.virtualoffice.chat_service.model.Message;
 import com.virtualoffice.chat_service.model.MessageType;
 import com.virtualoffice.chat_service.repository.MessageRepository;
+import com.virtualoffice.chat_service.repository.ThreadRepository;
 import com.virtualoffice.chat_service.service.ChannelService;
 import com.virtualoffice.chat_service.service.MessageService;
 import lombok.RequiredArgsConstructor;
 import org.bson.types.ObjectId;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -45,6 +48,7 @@ public class MessageServiceImpl implements MessageService {
 
     private final MessageRepository messageRepository;
     private final ChannelService channelService;
+    private final ThreadRepository threadRepository;
 
     @Override
     public MessageResponse sendMessage(String channelId, SendMessageRequest request, Integer senderId, String senderRole) {
@@ -52,12 +56,13 @@ public class MessageServiceImpl implements MessageService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "you are not a member of this channel");
         }
 
-        // normalize blank to null up-front: avoids two empty-string retries dedup-matching each other,
-        // and keeps blanks out of the partial unique index
-        String clientMsgId = request.getClientMessageId();
-        if (clientMsgId != null && clientMsgId.isBlank()) {
-            clientMsgId = null;
+        ObjectId channelOid = new ObjectId(channelId);
+
+        String normalized = request.getClientMessageId();
+        if (normalized != null && normalized.isBlank()) {
+            normalized = null;
         }
+        final String clientMsgId = normalized;
 
         if (clientMsgId != null) {
             Optional<Message> existing = messageRepository.findBySenderIdAndClientMessageId(senderId, clientMsgId);
@@ -66,16 +71,34 @@ public class MessageServiceImpl implements MessageService {
             }
         }
 
+        ObjectId threadOid = toObjectId(request.getThreadId());
+        if (threadOid != null) {
+            ChatThread thread = threadRepository.findActiveById(threadOid)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread not found"));
+            if (!thread.getChannelId().equals(channelOid)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "thread does not belong to this channel");
+            }
+        }
+
+        ObjectId replyOid = toObjectId(request.getReplyToId());
+        if (replyOid != null) {
+            Message replyTarget = messageRepository.findById(replyOid)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "replyToId not found"));
+            if (!replyTarget.getChannelId().equals(channelOid)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "replyToId does not belong to this channel");
+            }
+        }
+
         Instant now = Instant.now();
 
         Message message = Message.builder()
-                .channelId(new ObjectId(channelId))
+                .channelId(channelOid)
                 .senderId(senderId)
                 .senderRole(senderRole != null ? senderRole : "USER")
                 .content(request.getContent())
                 .type(MessageType.TEXT)
-                .threadId(toObjectId(request.getThreadId()))
-                .replyToId(toObjectId(request.getReplyToId()))
+                .threadId(threadOid)
+                .replyToId(replyOid)
                 .mentions(request.getMentions())
                 .clientMessageId(clientMsgId)
                 .deleted(false)
@@ -83,8 +106,16 @@ public class MessageServiceImpl implements MessageService {
                 .updatedAt(now)
                 .build();
 
-        Message saved = messageRepository.save(message);
-        return DtoMapper.toMessageResponse(saved);
+        try {
+            return DtoMapper.toMessageResponse(messageRepository.save(message));
+        } catch (DuplicateKeyException e) {
+            if (clientMsgId != null) {
+                return messageRepository.findBySenderIdAndClientMessageId(senderId, clientMsgId)
+                        .map(DtoMapper::toMessageResponse)
+                        .orElseThrow(() -> e);
+            }
+            throw e;
+        }
     }
 
     @Override

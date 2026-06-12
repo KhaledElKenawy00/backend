@@ -65,7 +65,7 @@ public class ReadReceiptServiceImpl implements ReadReceiptService {
     @Override
     public void markAsRead(String channelId, Integer userId, String lastReadMessageId) {
         validateChannelMessage(channelId, lastReadMessageId);
-        moveForwardOnly(channelKey(channelId, userId), lastReadMessageId);
+        moveForwardOnly(channelKey(channelId, userId), new ObjectId(lastReadMessageId).toHexString());
     }
 
     @Override
@@ -92,7 +92,7 @@ public class ReadReceiptServiceImpl implements ReadReceiptService {
     @Override
     public void markThreadAsRead(String threadId, Integer userId, String lastReadMessageId) {
         validateThreadMessage(threadId, lastReadMessageId);
-        moveForwardOnly(threadKey(threadId, userId), lastReadMessageId);
+        moveForwardOnly(threadKey(threadId, userId), new ObjectId(lastReadMessageId).toHexString());
     }
 
     @Override

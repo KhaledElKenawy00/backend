@@ -65,7 +65,22 @@ public class WebSocketSubscriptionInterceptor implements ChannelInterceptor {
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
-        if (accessor == null || accessor.getCommand() != StompCommand.SUBSCRIBE) {
+        if (accessor == null) {
+            return message;
+        }
+
+        StompCommand command = accessor.getCommand();
+
+        if (command == StompCommand.SEND) {
+            String sendDestination = accessor.getDestination();
+            if (sendDestination == null || !sendDestination.startsWith("/app/")) {
+                sendError(accessor, CODE_INVALID_PAYLOAD, "cannot send to destination: " + sendDestination);
+                return null;
+            }
+            return message;
+        }
+
+        if (command != StompCommand.SUBSCRIBE) {
             return message;
         }
 

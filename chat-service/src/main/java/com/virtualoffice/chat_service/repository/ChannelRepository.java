@@ -24,8 +24,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.mongodb.repository.Update;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.Optional;
 
 @Repository
@@ -39,4 +41,15 @@ public interface ChannelRepository extends MongoRepository<Channel, ObjectId> {
 
     @Query("{ 'type': ?0, 'members': ?1 }")
     Page<Channel> findDirectChannelsForUser(ChannelType type, Integer userId, Pageable pageable);
+
+    @Query("{ '_id': ?0 }")
+    @Update("{ '$addToSet': { 'members': ?1 }, '$set': { 'updatedAt': ?2 } }")
+    long addMember(ObjectId channelId, Integer userId, Instant updatedAt);
+
+    @Query("{ '_id': ?0 }")
+    @Update("{ '$pull': { 'members': ?1 }, '$set': { 'updatedAt': ?2 } }")
+    long removeMember(ObjectId channelId, Integer userId, Instant updatedAt);
+
+    @Query(value = "{ '_id': ?0, 'members': { '$size': 0 } }", delete = true)
+    long deleteIfEmpty(ObjectId channelId);
 }

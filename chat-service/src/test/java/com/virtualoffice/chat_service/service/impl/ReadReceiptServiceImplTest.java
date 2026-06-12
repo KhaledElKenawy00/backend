@@ -169,6 +169,24 @@ class ReadReceiptServiceImplTest {
                             .isEqualTo(HttpStatus.BAD_REQUEST));
             verifyNoInteractions(redisTemplate);
         }
+
+        @Test
+        void shouldStoreCanonicalLowercaseCursor() {
+            ObjectId channelId = new ObjectId();
+            ObjectId messageId = new ObjectId();
+            String upper = messageId.toHexString().toUpperCase();
+            when(messageRepository.findById(messageId))
+                    .thenReturn(Optional.of(channelMsg(messageId, channelId)));
+
+            readReceiptService.markAsRead(channelId.toHexString(), 10, upper);
+
+            verify(redisTemplate).execute(
+                    any(RedisScript.class),
+                    eq(List.of("read:" + channelId.toHexString() + ":10")),
+                    eq(messageId.toHexString()),
+                    eq(String.valueOf(30L * 24 * 3600))
+            );
+        }
     }
 
     @Nested

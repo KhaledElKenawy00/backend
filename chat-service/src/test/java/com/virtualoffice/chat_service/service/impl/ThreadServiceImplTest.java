@@ -35,9 +35,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -237,6 +239,26 @@ class ThreadServiceImplTest {
 
             assertThatThrownBy(() -> threadService.createThread(channelId.toHexString(), request, 10, "USER"))
                     .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("a thread already exists");
+        }
+
+        @Test
+        void shouldReturn409WhenConcurrentCreateHitsUniqueIndex() {
+            when(channelService.isMember(channelId.toHexString(), 10)).thenReturn(true);
+            when(messageRepository.findById(rootMessageId)).thenReturn(Optional.of(rootMessage));
+            when(threadRepository.existsByRootMessageId(rootMessageId)).thenReturn(false);
+            when(threadRepository.save(any(ChatThread.class)))
+                    .thenThrow(new DuplicateKeyException("idx_rootMessageId dup"));
+
+            CreateThreadRequest request = CreateThreadRequest.builder()
+                    .rootMessageId(rootMessageId.toHexString())
+                    .name("race")
+                    .build();
+
+            assertThatThrownBy(() -> threadService.createThread(channelId.toHexString(), request, 10, "USER"))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode())
+                            .isEqualTo(HttpStatus.CONFLICT))
                     .hasMessageContaining("a thread already exists");
         }
     }

@@ -37,7 +37,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -52,10 +54,10 @@ public class ChannelServiceImpl implements ChannelService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId is required for group channels");
         }
 
-        List<Integer> members = new ArrayList<>(request.getMembers());
-        if (!members.contains(creatorUserId)) {
-            members.add(creatorUserId);
-        }
+        LinkedHashSet<Integer> memberSet = new LinkedHashSet<>(request.getMembers());
+        memberSet.removeIf(Objects::isNull);
+        memberSet.add(creatorUserId);
+        List<Integer> members = new ArrayList<>(memberSet);
 
         Instant now = Instant.now();
 
@@ -115,9 +117,7 @@ public class ChannelServiceImpl implements ChannelService {
             return;
         }
 
-        channel.getMembers().add(userId);
-        channel.setUpdatedAt(Instant.now());
-        channelRepository.save(channel);
+        channelRepository.addMember(id, userId, Instant.now());
     }
 
     @Override
@@ -134,16 +134,8 @@ public class ChannelServiceImpl implements ChannelService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "not a member of this channel");
         }
 
-        channel.getMembers().remove(Integer.valueOf(userId));
-
-        // last member out — delete so the (workspaceId, name) slot is freed up for re-use
-        if (channel.getMembers().isEmpty()) {
-            channelRepository.delete(channel);
-            return;
-        }
-
-        channel.setUpdatedAt(Instant.now());
-        channelRepository.save(channel);
+        channelRepository.removeMember(id, userId, Instant.now());
+        channelRepository.deleteIfEmpty(id);
     }
 
     @Override
