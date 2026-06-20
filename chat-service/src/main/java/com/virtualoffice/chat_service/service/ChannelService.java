@@ -27,6 +27,8 @@ public interface ChannelService {
 
     PaginatedResponse<ChannelResponse> getWorkspaceChannels(Integer workspaceId, Integer userId, int page, int limit);
 
+    PaginatedResponse<ChannelResponse> getRoomChannels(Integer workspaceId, Integer userId, int page, int limit);
+
     ChannelResponse getChannel(String channelId);
 
     void joinChannel(String channelId, Integer userId);

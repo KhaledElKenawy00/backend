@@ -94,7 +94,7 @@ All three fields are required. `members` must contain at least one user ID; the 
 ```
 GET /api/chat/channels?workspaceId=100&page=1&limit=20
 ```
-Returns only channels the requesting user is a member of.
+Returns only **`GROUP`** channels the requesting user is a member of. `DIRECT` (use `GET /api/chat/dm`) and `ROOM` (use `GET /api/chat/rooms`) channels are **excluded**.
 
 **Response** `200`:
 ```json
@@ -105,6 +105,14 @@ Returns only channels the requesting user is a member of.
   "currentPage": 1
 }
 ```
+
+#### List room channels
+```
+GET /api/chat/rooms?workspaceId=100&page=1&limit=20
+```
+Returns the **`ROOM`**-type channels (the text side of voice/video rooms) the requesting user is a member of, in the given workspace, paginated (newest activity first). This is how the frontend pulls the **message history** for the rooms a user belongs to. Each item is a `ChannelResponse` with `type: "ROOM"` and `name: null` — resolve the display name from the matching room in room-service. ROOM channels can only be **listed/read** here; they are created/deleted only by room-service (via RabbitMQ).
+
+**Response** `200`: same `PaginatedResponse<ChannelResponse>` shape as above.
 
 #### Get a channel
 ```
@@ -511,6 +519,19 @@ For validation errors with multiple field violations, `message` joins them with 
 - All IDs are **MongoDB ObjectId strings** (24-char hex, e.g. `"64f1a2b3c4d5e6f7a8b9c0d1"`).
 - Timestamps are **ISO 8601 UTC** (e.g. `"2026-04-10T14:00:00Z"`).
 - User IDs are **integers** (e.g. `42`).
-- Channel types: `"GROUP"` or `"DIRECT"`.
+- Channel types: `"GROUP"`, `"DIRECT"`, or `"ROOM"` (see below).
 - Message types: `"TEXT"` or `"SYSTEM"` (the API only ever creates `TEXT` from client requests).
 - Pages are **1-based** (`page=1` is the first page).
+
+---
+
+## Room text channels (`ROOM`)
+
+Voice/video **rooms** (managed by **room-service**, `:8086`) each have a bound text channel of type `"ROOM"`. chat-service lets you **list and read** these channels but **not create or delete** them — they are provisioned by room-service (via RabbitMQ) behind the scenes.
+
+How the frontend uses them:
+
+1. List the room channels a user is in: `GET /api/chat/rooms?workspaceId=…` → `ChannelResponse[]` with `type: "ROOM"` and their `channelId`s. (Room **metadata** — display name, participants, presence — comes from room-service: `GET /api/rooms?workspaceId=…`; match by `channelId`.)
+2. Use a `channelId` with the **normal** chat endpoints — messages, threads, read receipts, and the `/topic/channel/{channelId}` WebSocket topic all work exactly as for a `GROUP` channel (membership is enforced the same way; room-service keeps the channel's members in sync with room membership).
+
+A unified "all my conversations" view is composed client-side from `GET /api/chat/channels?workspaceId` (groups) + `GET /api/chat/dm` (DMs) + `GET /api/chat/rooms?workspaceId` (room text channels). chat-service does **not** return a single merged list across the three types.

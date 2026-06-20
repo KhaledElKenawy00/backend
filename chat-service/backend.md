@@ -12,6 +12,7 @@ A Spring Boot microservice handling real-time messaging, channels, threads, and 
 | Database | MongoDB 7 (via Docker) |
 | Cache | Redis 7 (via Docker) |
 | Realtime | STOMP over WebSocket |
+| Messaging | RabbitMQ (consume room-channel events from room-service — owned by user-service) |
 | Build | Maven (wrapper included) |
 
 ## Architecture
@@ -42,12 +43,12 @@ src/main/java/com/khalwsh/chat_service/
 ## Data Model
 
 ### Channel
-- `id` (ObjectId) — auto-generated
-- `name` — channel name (null for DMs)
-- `type` — `GROUP` or `DIRECT`
-- `workspaceId` — integer (null for DMs)
-- `members` — list of user IDs
-- `dmKey` — deterministic key for DMs (e.g. `"5_42"`); null for GROUP channels
+- `id` (ObjectId) — auto-generated for GROUP/DIRECT; for `ROOM` it is **supplied by room-service** in the create event
+- `name` — channel name (null for DMs and ROOM channels)
+- `type` — `GROUP`, `DIRECT`, or `ROOM` (`ROOM` = text channel bound to a voice/video room, managed by room-service via RabbitMQ — never created through the public API)
+- `workspaceId` — integer (set for GROUP and ROOM; null for DMs)
+- `members` — list of user IDs (for ROOM channels, kept in sync by room-service)
+- `dmKey` — deterministic key for DMs (e.g. `"5_42"`); null for GROUP and ROOM channels
 - `createdBy`, `createdAt`, `updatedAt`
 
 ### Message
@@ -68,7 +69,7 @@ src/main/java/com/khalwsh/chat_service/
 - `(channelId, createdAt)` — channel message queries
 - `(threadId, createdAt)` — thread message queries
 - `(senderId, clientMessageId)` — partial unique index for idempotency (only when `clientMessageId` is present and non-null)
-- `(workspaceId, name)` — partial unique index for channel name uniqueness (only when `workspaceId` is non-null, so DMs are excluded)
+- `(workspaceId, name)` — partial unique index for channel name uniqueness, scoped to `type == GROUP` (DMs and ROOM channels carry `name: null` and are excluded, so room names never collide with group-channel names)
 - `(dmKey)` — partial unique index for DM deduplication (only when `dmKey` is present and non-null, so GROUP channels are excluded). Done with a `partialFilterExpression` rather than `sparse: true` because Spring writes `dmKey: null` for GROUPs and `sparse` would still index that.
 
 ### ChatThread
@@ -84,10 +85,18 @@ src/main/java/com/khalwsh/chat_service/
 
 ### Channel Management
 - Create GROUP channels (require workspaceId + members)
-- Join/leave group channels (idempotent join, can't join DMs)
+- Join/leave group channels (idempotent join; only GROUP channels can be joined/left — DMs and ROOM channels are rejected)
 - Create DMs (idempotent via `dmKey` partial-unique index, race-condition safe with `DuplicateKeyException` catch)
 - Self-DMs blocked
 - **Last-member leave deletes the channel** so the `(workspaceId, name)` uniqueness slot is freed and the channel is no longer reachable
+- Listing is type-segregated: `GET /api/chat/channels?workspaceId` → **GROUP only**; `GET /api/chat/dm` → DMs; `GET /api/chat/rooms?workspaceId` → **ROOM** channels the user is in (their text-chat history)
+
+### Room Channels (RabbitMQ consumer)
+- `ROOM` channels are the text side of voice/video rooms owned by **room-service** (`:8086`). They are **never** created via the public API.
+- room-service publishes lifecycle events to the `room.exchange` / `room.channel.queue` (single direct exchange, one queue, one routing key, no DLQ); chat-service consumes them with a single `@RabbitListener` (`RoomChannelListener`) dispatching on `event.type`: `ROOM_CHANNEL_CREATE` (insert with the room-supplied `_id`, `name: null`, idempotent via `existsById`), `DELETE`, `ADD_MEMBER`/`REMOVE_MEMBER` (atomic `$addToSet`/`$pull`).
+- Malformed events (null type / invalid `channelId`, or null `userId` on add/remove) are dropped; transient failures retry 5× then drop (no requeue). See arc §19.
+- Once provisioned, the room's text chat uses the **normal** message / thread / read-receipt / WebSocket endpoints via its `channelId`.
+- **`GET /api/chat/rooms?workspaceId`** lets the frontend list the ROOM channels (and thus reach the message history) a user belongs to in a workspace — read-only; creation/deletion stay with room-service.
 
 ### Messaging
 - Send messages to channels or threads via REST or STOMP

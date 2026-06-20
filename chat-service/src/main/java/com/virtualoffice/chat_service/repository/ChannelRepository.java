@@ -33,8 +33,11 @@ import java.util.Optional;
 @Repository
 public interface ChannelRepository extends MongoRepository<Channel, ObjectId> {
 
-    @Query("{ 'workspaceId': ?0, 'members': ?1 }")
+    @Query("{ 'workspaceId': ?0, 'type': 'GROUP', 'members': ?1 }")
     Page<Channel> findWorkspaceChannelsForUser(Integer workspaceId, Integer userId, Pageable pageable);
+
+    @Query("{ 'workspaceId': ?0, 'type': 'ROOM', 'members': ?1 }")
+    Page<Channel> findRoomChannelsForUser(Integer workspaceId, Integer userId, Pageable pageable);
 
     @Query("{ 'dmKey': ?0 }")
     Optional<Channel> findByDmKey(String dmKey);

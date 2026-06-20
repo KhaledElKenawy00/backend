@@ -250,6 +250,46 @@ class ChannelServiceImplTest {
     }
 
     // ────────────────────────────────────────
+    // getRoomChannels
+    // ────────────────────────────────────────
+
+    @Nested
+    class GetRoomChannels {
+
+        @Test
+        void shouldReturnPaginatedRoomChannels() {
+            Channel roomChannel = Channel.builder()
+                    .id(new ObjectId())
+                    .type(ChannelType.ROOM)
+                    .workspaceId(1)
+                    .members(new ArrayList<>(List.of(10)))
+                    .createdAt(Instant.now())
+                    .updatedAt(Instant.now())
+                    .build();
+            Page<Channel> page = new PageImpl<>(List.of(roomChannel));
+            when(channelRepository.findRoomChannelsForUser(eq(1), eq(10), any(Pageable.class)))
+                    .thenReturn(page);
+
+            PaginatedResponse<ChannelResponse> result = channelService.getRoomChannels(1, 10, 1, 20);
+
+            assertThat(result.getContent()).hasSize(1);
+            assertThat(result.getContent().get(0).getType()).isEqualTo("ROOM");
+            assertThat(result.getCurrentPage()).isEqualTo(1);
+        }
+
+        @Test
+        void shouldReturnEmptyWhenNoRoomChannels() {
+            when(channelRepository.findRoomChannelsForUser(eq(1), eq(10), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of()));
+
+            PaginatedResponse<ChannelResponse> result = channelService.getRoomChannels(1, 10, 1, 20);
+
+            assertThat(result.getContent()).isEmpty();
+            assertThat(result.getTotalElements()).isZero();
+        }
+    }
+
+    // ────────────────────────────────────────
     // getChannel
     // ────────────────────────────────────────
 
@@ -309,7 +349,7 @@ class ChannelServiceImplTest {
 
             assertThatThrownBy(() -> channelService.joinChannel(dmChannel.getId().toHexString(), 30))
                     .isInstanceOf(ResponseStatusException.class)
-                    .hasMessageContaining("cannot join a direct message channel");
+                    .hasMessageContaining("only group channels can be joined");
         }
 
         @Test
@@ -377,7 +417,7 @@ class ChannelServiceImplTest {
 
             assertThatThrownBy(() -> channelService.leaveChannel(dmChannel.getId().toHexString(), 10))
                     .isInstanceOf(ResponseStatusException.class)
-                    .hasMessageContaining("cannot leave a direct message channel");
+                    .hasMessageContaining("only group channels can be left");
         }
 
         @Test

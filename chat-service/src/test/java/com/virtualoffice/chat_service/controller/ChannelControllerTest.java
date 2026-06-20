@@ -115,6 +115,28 @@ class ChannelControllerTest {
     }
 
     // ────────────────────────────────────────
+    // getRoomChannels
+    // ────────────────────────────────────────
+
+    @Nested
+    class GetRoomChannels {
+
+        @Test
+        void shouldReturnPaginatedRoomChannels() {
+            HttpServletRequest httpRequest = mockRequest("10", "USER");
+            PaginatedResponse<ChannelResponse> expected = PaginatedResponse.<ChannelResponse>builder()
+                    .content(List.of()).currentPage(1).totalElements(0).totalPages(0).build();
+            when(channelService.getRoomChannels(1, 10, 1, 20)).thenReturn(expected);
+
+            ResponseEntity<PaginatedResponse<ChannelResponse>> response =
+                    controller.getRoomChannels(1, 1, 20, httpRequest);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isEqualTo(expected);
+        }
+    }
+
+    // ────────────────────────────────────────
     // getChannel — membership check
     // ────────────────────────────────────────
 
