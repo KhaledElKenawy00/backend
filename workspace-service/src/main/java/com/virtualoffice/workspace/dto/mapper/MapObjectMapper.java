@@ -17,27 +17,19 @@
  */
 package com.virtualoffice.workspace.dto.mapper;
 
-import com.virtualoffice.workspace.dto.response.DeskResponse;
-import com.virtualoffice.workspace.dto.response.DeskWidgetResponse;
-import com.virtualoffice.workspace.model.Desk;
-import com.virtualoffice.workspace.model.DeskWidget;
+import com.virtualoffice.workspace.dto.response.MapObjectResponse;
+import com.virtualoffice.workspace.model.MapObject;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
 import java.util.List;
 
 @Mapper(componentModel = "spring")
-public interface DeskMapper {
+public interface MapObjectMapper {
 
-    DeskWidgetResponse toWidget(DeskWidget widget);
+    // boolean field isActive exposes property "active" via isActive(); record component is "isActive"
+    @Mapping(target = "isActive", source = "active")
+    MapObjectResponse toResponse(MapObject mapObject);
 
-    List<DeskWidgetResponse> toWidgets(List<DeskWidget> widgets);
-
-    // links + widgets come from their own child tables, so they're passed in as extra sources.
-    // boolean is-fields expose properties "online"/"active"; record components are "isOnline"/"isActive".
-    @Mapping(target = "links", source = "links")
-    @Mapping(target = "widgets", source = "widgets")
-    @Mapping(target = "isOnline", source = "desk.online")
-    @Mapping(target = "isActive", source = "desk.active")
-    DeskResponse toResponse(Desk desk, List<String> links, List<DeskWidgetResponse> widgets);
+    List<MapObjectResponse> toResponseList(List<MapObject> mapObjects);
 }
