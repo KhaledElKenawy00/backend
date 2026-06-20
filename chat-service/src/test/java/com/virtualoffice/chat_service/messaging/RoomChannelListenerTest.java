@@ -36,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -156,5 +157,57 @@ class RoomChannelListenerTest {
         listener.handle(event);
 
         verify(channelRepository).removeMember(eq(channelId), eq(99), any(Instant.class));
+    }
+
+    @Test
+    void shouldDropEventWithNullType() {
+        RoomChannelEvent event = RoomChannelEvent.builder()
+                .type(null)
+                .channelId(new ObjectId().toHexString())
+                .build();
+
+        listener.handle(event);
+
+        verifyNoInteractions(channelRepository);
+    }
+
+    @Test
+    void shouldDropEventWithInvalidChannelId() {
+        RoomChannelEvent event = RoomChannelEvent.builder()
+                .type(RoomChannelEventType.ROOM_CHANNEL_CREATE)
+                .channelId("not-a-valid-objectid")
+                .workspaceId(7)
+                .members(List.of(1))
+                .build();
+
+        listener.handle(event);
+
+        verifyNoInteractions(channelRepository);
+    }
+
+    @Test
+    void shouldDropAddMemberWithNullUserId() {
+        RoomChannelEvent event = RoomChannelEvent.builder()
+                .type(RoomChannelEventType.ROOM_CHANNEL_ADD_MEMBER)
+                .channelId(new ObjectId().toHexString())
+                .userId(null)
+                .build();
+
+        listener.handle(event);
+
+        verify(channelRepository, never()).addMember(any(), any(), any());
+    }
+
+    @Test
+    void shouldDropRemoveMemberWithNullUserId() {
+        RoomChannelEvent event = RoomChannelEvent.builder()
+                .type(RoomChannelEventType.ROOM_CHANNEL_REMOVE_MEMBER)
+                .channelId(new ObjectId().toHexString())
+                .userId(null)
+                .build();
+
+        listener.handle(event);
+
+        verify(channelRepository, never()).removeMember(any(), any(), any());
     }
 }

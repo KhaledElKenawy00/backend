@@ -96,6 +96,25 @@ public class ChannelServiceImpl implements ChannelService {
     }
 
     @Override
+    public PaginatedResponse<ChannelResponse> getRoomChannels(Integer workspaceId, Integer userId, int page, int limit) {
+        PageRequest pageRequest = PageRequest.of(page - 1, limit, Sort.by(Sort.Direction.DESC, "updatedAt"));
+
+        Page<Channel> channelPage = channelRepository.findRoomChannelsForUser(workspaceId, userId, pageRequest);
+
+        List<ChannelResponse> channels = channelPage.getContent()
+                .stream()
+                .map(DtoMapper::toChannelResponse)
+                .toList();
+
+        return PaginatedResponse.<ChannelResponse>builder()
+                .content(channels)
+                .totalPages(channelPage.getTotalPages())
+                .totalElements(channelPage.getTotalElements())
+                .currentPage(page)
+                .build();
+    }
+
+    @Override
     public ChannelResponse getChannel(String channelId) {
         ObjectId id = new ObjectId(channelId);
         Channel channel = channelRepository.findById(id)
@@ -110,7 +129,7 @@ public class ChannelServiceImpl implements ChannelService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "channel not found"));
 
         if (channel.getType() != ChannelType.GROUP) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "cannot join a direct message channel");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "only group channels can be joined");
         }
 
         if (channel.getMembers().contains(userId)) {
@@ -127,7 +146,7 @@ public class ChannelServiceImpl implements ChannelService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "channel not found"));
 
         if (channel.getType() != ChannelType.GROUP) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "cannot leave a direct message channel");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "only group channels can be left");
         }
 
         if (!channel.getMembers().contains(userId)) {

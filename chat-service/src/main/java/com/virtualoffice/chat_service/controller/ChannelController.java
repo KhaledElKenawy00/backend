@@ -71,6 +71,19 @@ public class ChannelController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/rooms")
+    public ResponseEntity<PaginatedResponse<ChannelResponse>> getRoomChannels(
+            @RequestParam Integer workspaceId,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
+            HttpServletRequest httpRequest) {
+
+        UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
+
+        PaginatedResponse<ChannelResponse> response = channelService.getRoomChannels(workspaceId, user.getUserId(), page, limit);
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/channels/{id}")
     public ResponseEntity<ChannelResponse> getChannel(
             @PathVariable String id,

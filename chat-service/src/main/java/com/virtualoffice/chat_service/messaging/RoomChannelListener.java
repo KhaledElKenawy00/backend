@@ -39,6 +39,10 @@ public class RoomChannelListener {
 
     @RabbitListener(queues = "${room.channel.queue}")
     public void handle(RoomChannelEvent event) {
+        if (event.getType() == null || event.getChannelId() == null || !ObjectId.isValid(event.getChannelId())) {
+            log.warn("dropping malformed room-channel event: {}", event);
+            return;
+        }
         switch (event.getType()) {
             case ROOM_CHANNEL_CREATE -> createChannel(event);
             case ROOM_CHANNEL_DELETE -> deleteChannel(event);
@@ -79,10 +83,18 @@ public class RoomChannelListener {
     }
 
     private void addMember(RoomChannelEvent event) {
+        if (event.getUserId() == null) {
+            log.warn("dropping ADD_MEMBER event with no userId for channel {}", event.getChannelId());
+            return;
+        }
         channelRepository.addMember(new ObjectId(event.getChannelId()), event.getUserId(), Instant.now());
     }
 
     private void removeMember(RoomChannelEvent event) {
+        if (event.getUserId() == null) {
+            log.warn("dropping REMOVE_MEMBER event with no userId for channel {}", event.getChannelId());
+            return;
+        }
         channelRepository.removeMember(new ObjectId(event.getChannelId()), event.getUserId(), Instant.now());
     }
 }
