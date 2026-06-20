@@ -59,6 +59,40 @@ class WorkspaceControllerIT extends AbstractIntegrationTest {
         assertThat(got.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
+    /**
+     * Canonical persistence round-trip: create -> GET (stored?) -> update -> GET (updated?).
+     * The proof is the SEPARATE GET after each mutation — re-reading from the DB rather than
+     * trusting the create/update response body (which would pass even if nothing were saved).
+     */
+    @Test
+    void persistsAcrossCreateUpdateAndGet() {
+        // 1. create
+        WorkspaceResponse created = create(1L, uniqueSlug("rt")).getBody();
+        assertThat(created).isNotNull();
+        Long id = created.id();
+
+        // 2. GET it back — proves the create was actually stored
+        WorkspaceResponse afterCreate = rest.exchange("/api/workspace/" + id, HttpMethod.GET,
+                new HttpEntity<>(userHeaders(1L)), WorkspaceResponse.class).getBody();
+        assertThat(afterCreate).isNotNull();
+        assertThat(afterCreate.id()).isEqualTo(id);
+        assertThat(afterCreate.description()).isEqualTo("desc");
+
+        // 3. update
+        ResponseEntity<WorkspaceResponse> updated = rest.exchange("/api/workspace/" + id, HttpMethod.PUT,
+                new HttpEntity<>(new UpdateWorkspaceRequest("Renamed Co", "new description", null, null),
+                        userHeaders(1L)),
+                WorkspaceResponse.class);
+        assertThat(updated.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // 4. GET again — proves the update was persisted, not just echoed back
+        WorkspaceResponse afterUpdate = rest.exchange("/api/workspace/" + id, HttpMethod.GET,
+                new HttpEntity<>(userHeaders(1L)), WorkspaceResponse.class).getBody();
+        assertThat(afterUpdate).isNotNull();
+        assertThat(afterUpdate.name()).isEqualTo("Renamed Co");
+        assertThat(afterUpdate.description()).isEqualTo("new description");
+    }
+
     @Test
     void duplicateSlugReturns409() {
         String slug = uniqueSlug("dup");
