@@ -89,6 +89,31 @@ class DeskServiceImplTest {
     }
 
     @Test
+    void updateReplacesLinksAndWidgets() {
+        when(deskRepository.findByIdAndWorkspaceId(10L, 1L)).thenReturn(Optional.of(desk(10L, 5L, WorkspaceRole.MEMBER)));
+        when(deskRepository.save(org.mockito.ArgumentMatchers.any(Desk.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.updateDesk(1L, 10L, new UpdateDeskRequest(null, "Nick", null, "bio", null, "UTC", 3L,
+                java.util.List.of("https://a", "https://a", "https://b"),
+                java.util.List.of(new UpdateDeskRequest.WidgetInput("CLOCK", "Clock", 0, "{}"))), 5L);
+
+        verify(deskLinkRepository).deleteByDeskId(10L);
+        verify(deskWidgetRepository).deleteByDeskId(10L);
+        // duplicate link URLs are de-duplicated before saving
+        verify(deskLinkRepository, org.mockito.Mockito.times(2))
+                .save(org.mockito.ArgumentMatchers.any());
+        verify(deskWidgetRepository).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void getDeskByIdRequiresMembership() {
+        when(deskRepository.findByIdAndWorkspaceId(10L, 1L)).thenReturn(Optional.of(desk(10L, 5L, WorkspaceRole.MEMBER)));
+        DeskResponse r = service.getDesk(1L, 10L, 999L);
+        assertThat(r.id()).isEqualTo(10L);
+        verify(accessGuard).requireMember(1L, 999L);
+    }
+
+    @Test
     void cannotUpdateAnotherUsersDesk() {
         when(deskRepository.findByIdAndWorkspaceId(10L, 1L)).thenReturn(Optional.of(desk(10L, 5L, WorkspaceRole.MEMBER)));
         assertThatThrownBy(() -> service.updateDesk(1L, 10L,

@@ -19,6 +19,8 @@ package com.virtualoffice.workspace.controller;
 
 import com.virtualoffice.workspace.AbstractIntegrationTest;
 import com.virtualoffice.workspace.dto.LayoutLayer;
+import com.virtualoffice.workspace.dto.LayoutSpawnPoint;
+import com.virtualoffice.workspace.dto.LayoutTileset;
 import com.virtualoffice.workspace.dto.LayoutZone;
 import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
 import com.virtualoffice.workspace.dto.response.LayoutResponse;
@@ -44,11 +46,11 @@ class LayoutControllerIT extends AbstractIntegrationTest {
         // voiceRoomId is globally unique, so generate a fresh one per call (tests share one DB)
         String voiceRoomId = uniqueSlug("voice");
         return new UpdateLayoutRequest(expectedVersion, 32, 80, 60, "{\"bg\":\"day\"}",
-                List.of(),
+                List.of(new LayoutTileset("office", "tilesets/office.png", 1, 32, 32, 16, 256)),
                 List.of(new LayoutLayer("Ground", 0, false, "[[1,2],[3,4]]"),
                         new LayoutLayer("Walls", 1, true, "[[0,0],[0,0]]")),
-                List.of(new LayoutZone(ZoneType.MEETING_ROOM, "Sync Room", 5, 5, 10, 10, voiceRoomId, null)),
-                List.of());
+                List.of(new LayoutZone(ZoneType.MEETING_ROOM, "Sync Room", 5, 5, 10, 10, voiceRoomId, 150)),
+                List.of(new LayoutSpawnPoint(705, 500, "entry", true)));
     }
 
     @Test
@@ -66,6 +68,8 @@ class LayoutControllerIT extends AbstractIntegrationTest {
         assertThat(updated.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(updated.getBody().layoutVersion()).isEqualTo(1L);
         assertThat(updated.getBody().layers()).hasSize(2);
+        assertThat(updated.getBody().tilesets()).hasSize(1);
+        assertThat(updated.getBody().spawnPoints()).hasSize(1);
         assertThat(updated.getBody().zones()).hasSize(1);
         assertThat(updated.getBody().zones().get(0).voiceRoomId()).isNotBlank();
 

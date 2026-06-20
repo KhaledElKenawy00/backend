@@ -18,13 +18,17 @@
 package com.virtualoffice.workspace.controller;
 
 import com.virtualoffice.workspace.AbstractIntegrationTest;
+import com.virtualoffice.workspace.dto.request.PresenceBatchRequest;
 import com.virtualoffice.workspace.dto.request.PresenceSyncRequest;
 import com.virtualoffice.workspace.dto.response.ChatContextResponse;
 import com.virtualoffice.workspace.dto.response.JoinValidationResponse;
 import com.virtualoffice.workspace.dto.response.MemberRoleResponse;
 import com.virtualoffice.workspace.dto.response.SessionConfigResponse;
+import com.virtualoffice.workspace.dto.response.ZoneResponse;
 import com.virtualoffice.workspace.model.enums.DeskStatus;
 import com.virtualoffice.workspace.model.enums.WorkspaceRole;
+
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -91,6 +95,32 @@ class SessionControllerIT extends AbstractIntegrationTest {
         var ownerDesk = cfg.desks().stream().filter(d -> d.userId().equals(3L)).findFirst().orElseThrow();
         assertThat(ownerDesk.isOnline()).isTrue();
         assertThat(ownerDesk.positionX()).isEqualTo(42);
+    }
+
+    @Test
+    void presenceBatchUpdatesKnownDesksAndSkipsUnknown() {
+        Long wid = createWorkspace(rest, 6L).id();
+        ResponseEntity<Void> r = rest.exchange(base(wid) + "/presence/batch", HttpMethod.POST,
+                new HttpEntity<>(new PresenceBatchRequest(List.of(
+                        new PresenceSyncRequest(6L, true, null, null, 11, 22),
+                        new PresenceSyncRequest(999999L, true, null, null, 0, 0))), internalHeaders()),
+                Void.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        SessionConfigResponse cfg = rest.exchange(base(wid) + "/session-config", HttpMethod.GET,
+                new HttpEntity<>(internalHeaders()), SessionConfigResponse.class).getBody();
+        var owner = cfg.desks().stream().filter(d -> d.userId().equals(6L)).findFirst().orElseThrow();
+        assertThat(owner.positionX()).isEqualTo(11);
+    }
+
+    @Test
+    void zonesReturnsWorkspaceZones() {
+        Long wid = createWorkspace(rest, 7L).id();
+        // a fresh workspace has no zones yet
+        ResponseEntity<ZoneResponse[]> r = rest.exchange(base(wid) + "/zones", HttpMethod.GET,
+                new HttpEntity<>(internalHeaders()), ZoneResponse[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody()).isEmpty();
     }
 
     @Test

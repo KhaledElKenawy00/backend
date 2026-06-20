@@ -89,17 +89,39 @@ class DeskControllerIT extends AbstractIntegrationTest {
 
         ResponseEntity<DeskResponse> ok = rest.exchange("/api/workspace/" + wid + "/desks/" + deskId,
                 HttpMethod.PUT,
-                new HttpEntity<>(new UpdateDeskRequest("Forty One", null, "Engineer", null, null, null, null,
-                        List.of("https://example.com/a"), null), userHeaders(41L)),
+                new HttpEntity<>(new UpdateDeskRequest("Forty One", "41", "Engineer", "my bio",
+                        com.virtualoffice.workspace.model.enums.AvatarCharacter.LUCY, "Africa/Cairo", null,
+                        List.of("https://example.com/a"),
+                        List.of(new UpdateDeskRequest.WidgetInput("CLOCK", "Clock", 0, "{\"tz\":\"UTC\"}"))),
+                        userHeaders(41L)),
                 DeskResponse.class);
         assertThat(ok.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(ok.getBody().fullName()).isEqualTo("Forty One");
+        assertThat(ok.getBody().nickName()).isEqualTo("41");
         assertThat(ok.getBody().links()).containsExactly("https://example.com/a");
+        assertThat(ok.getBody().widgets()).hasSize(1);
+        assertThat(ok.getBody().widgets().get(0).type()).isEqualTo("CLOCK");
 
         ResponseEntity<String> forbidden = rest.exchange("/api/workspace/" + wid + "/desks/" + deskId,
                 HttpMethod.PUT,
                 new HttpEntity<>(new UpdateDeskRequest("Hacker", null, null, null, null, null, null, null, null),
                         userHeaders(4L)), String.class);
+        assertThat(forbidden.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void memberCanReadAnotherDeskById() {
+        Long wid = createWorkspace(rest, 8L).id();
+        Long deskId = seedMember(wid, 81L, true).getId();
+
+        ResponseEntity<DeskResponse> r = rest.exchange("/api/workspace/" + wid + "/desks/" + deskId,
+                HttpMethod.GET, new HttpEntity<>(userHeaders(8L)), DeskResponse.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody().userId()).isEqualTo(81L);
+
+        // a non-member is rejected
+        ResponseEntity<String> forbidden = rest.exchange("/api/workspace/" + wid + "/desks/" + deskId,
+                HttpMethod.GET, new HttpEntity<>(userHeaders(70000L)), String.class);
         assertThat(forbidden.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 

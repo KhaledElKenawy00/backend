@@ -111,6 +111,34 @@ class InvitationServiceImplTest {
     }
 
     @Test
+    void acceptReactivatesInactiveDesk() {
+        WorkspaceInvitation inv = invitation(InviteStatus.PENDING, Instant.now().plusSeconds(60));
+        Desk inactive = Desk.builder().id(5L).workspaceId(1L).userId(77L)
+                .role(WorkspaceRole.GUEST).isActive(false).build();
+        when(invitationRepository.findByToken(inv.getToken())).thenReturn(Optional.of(inv));
+        when(deskRepository.findByWorkspaceIdAndUserId(1L, 77L)).thenReturn(Optional.of(inactive));
+        when(invitationRepository.save(any(WorkspaceInvitation.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.acceptInvite(inv.getToken().toString(), 77L);
+
+        assertThat(inactive.isActive()).isTrue();
+        assertThat(inactive.getRole()).isEqualTo(WorkspaceRole.MEMBER); // from the invitation
+        verify(deskRepository).save(inactive);
+    }
+
+    @Test
+    void acceptWhenAlreadyActiveMemberIsConflict() {
+        WorkspaceInvitation inv = invitation(InviteStatus.PENDING, Instant.now().plusSeconds(60));
+        Desk active = Desk.builder().id(5L).workspaceId(1L).userId(77L)
+                .role(WorkspaceRole.MEMBER).isActive(true).build();
+        when(invitationRepository.findByToken(inv.getToken())).thenReturn(Optional.of(inv));
+        when(deskRepository.findByWorkspaceIdAndUserId(1L, 77L)).thenReturn(Optional.of(active));
+
+        assertThatThrownBy(() -> service.acceptInvite(inv.getToken().toString(), 77L))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
     void acceptExpiredInviteIsGone() {
         WorkspaceInvitation inv = invitation(InviteStatus.PENDING, Instant.now().minusSeconds(60));
         when(invitationRepository.findByToken(inv.getToken())).thenReturn(Optional.of(inv));

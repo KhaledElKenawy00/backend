@@ -21,13 +21,17 @@ import com.virtualoffice.workspace.exception.ConflictException;
 import com.virtualoffice.workspace.exception.ForbiddenException;
 import com.virtualoffice.workspace.exception.GoneException;
 import com.virtualoffice.workspace.exception.ResourceNotFoundException;
+import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -70,6 +74,31 @@ class GlobalExceptionHandlerTest {
     void optimisticLockMapsTo409() {
         assertThat(handler.handleOptimisticLock(new OptimisticLockingFailureException("stale")).getStatusCode())
                 .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void constraintViolationMapsTo400() {
+        assertThat(handler.handleConstraintViolation(new ConstraintViolationException("bad", Set.of()))
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void illegalArgumentMapsTo400() {
+        assertThat(handler.handleIllegalArgument(new IllegalArgumentException("nope")).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void dbFailureMapsTo503() {
+        assertThat(handler.handleDbFailure(new DataAccessResourceFailureException("down")).getStatusCode())
+                .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    void responseStatusIsPassedThrough() {
+        ResponseEntity<Map<String, Object>> r =
+                handler.handleResponseStatus(new ResponseStatusException(HttpStatus.GONE, "gone"));
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.GONE);
     }
 
     @Test

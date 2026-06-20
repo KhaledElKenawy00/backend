@@ -19,6 +19,7 @@ package com.virtualoffice.workspace.service;
 
 import com.virtualoffice.workspace.dto.mapper.MapObjectMapperImpl;
 import com.virtualoffice.workspace.dto.request.CreateMapObjectRequest;
+import com.virtualoffice.workspace.dto.request.UpdateMapObjectRequest;
 import com.virtualoffice.workspace.dto.response.MapObjectResponse;
 import com.virtualoffice.workspace.exception.ResourceNotFoundException;
 import com.virtualoffice.workspace.model.MapObject;
@@ -76,6 +77,23 @@ class MapObjectServiceImplTest {
 
         MapObjectResponse r = service.toggleActive(1L, 2L, 5L);
         assertThat(r.isActive()).isFalse();
+    }
+
+    @Test
+    void updateAppliesNonNullFields() {
+        MapObject obj = MapObject.builder().id(2L).workspaceId(1L).label("old")
+                .positionX(1).positionY(1).capacity(1).isActive(true).build();
+        when(repository.findByIdAndWorkspaceId(2L, 1L)).thenReturn(Optional.of(obj));
+        when(repository.save(any(MapObject.class))).thenAnswer(i -> i.getArgument(0));
+
+        MapObjectResponse r = service.updateMapObject(1L, 2L,
+                new UpdateMapObjectRequest("new", 9, null, 5), 5L);
+
+        assertThat(r.label()).isEqualTo("new");
+        assertThat(r.positionX()).isEqualTo(9);
+        assertThat(r.positionY()).isEqualTo(1);   // untouched
+        assertThat(r.capacity()).isEqualTo(5);
+        verify(accessGuard).requireRole(1L, 5L, WorkspaceRole.ADMIN);
     }
 
     @Test
