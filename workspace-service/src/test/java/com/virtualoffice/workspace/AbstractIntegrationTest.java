@@ -18,6 +18,8 @@
 package com.virtualoffice.workspace;
 
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -45,5 +47,19 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+    }
+
+    /** Headers a request carries after the gateway has validated the JWT. */
+    protected static HttpHeaders userHeaders(long userId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-User-Id", String.valueOf(userId));
+        headers.set("X-User-Role", "USER");
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return headers;
+    }
+
+    /** A reasonably unique, schema-valid workspace slug for tests sharing one DB. */
+    protected static String uniqueSlug(String prefix) {
+        return prefix + "-" + Long.toString(System.nanoTime(), 36);
     }
 }
