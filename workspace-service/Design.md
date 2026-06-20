@@ -19,7 +19,7 @@ A **Workspace** represents a single virtual office — one per company/team.
 | 3 | Owner ID | Reference to user-service |
 | 4 | Description | Short description / tagline |
 | 5 | Logo | Company logo URL |
-| 6 | 2D Layout Map | JSON document defining the spatial floorplan (walls, zones, furniture). Intentional JSON — spatial map data is hierarchical and queried as a whole, never column-by-column. |
+| 6 | 2D Layout Map | The floorplan is **DB-owned and normalized** (BCNF) into `tileset` / `map_layer` / `zone` / `spawn_point` tables — *not* a JSON blob. Only the raw tile-gid matrix per layer is serialized (justified 1NF exception). The layout API assembles/parses the client document at the edge. See [`DATABASE.md`](./DATABASE.md). |
 | 7 | Status | `WorkspaceStatus` enum: `ACTIVE`, `ARCHIVED`, `SUSPENDED` |
 | 8 | Visibility | `INVITE_ONLY` — access is granted exclusively via invitation; non-members cannot discover or request entry |
 | 9 | Invite Token | Shareable invite link token (UUID); rotatable by admin; used by `WorkspaceInvitation` to validate join links |
@@ -57,7 +57,7 @@ Think of it as a **membership record** that also carries the user's workspace-sp
 | 15 | Is Online | Cached presence flag — synced back from Colyseus on connect/disconnect. Not a source of truth; always verify against Last Seen At. |
 | 16 | Last Seen At | Timestamp of last activity |
 | 17 | Permissions / Role | `WorkspaceRole` enum: `OWNER`, `ADMIN`, `MEMBER`, `GUEST` |
-| 18 | Desk Customization | JSON document — personal widgets and quick-access links. Intentional JSON — structure is user-defined and variable; never queried by individual key. |
+| 18 | Desk Customization | Normalized into a `desk_widget` child table (one row per widget: type, label, position). Only each widget's *type-specific settings* remain as `config jsonb` (justified exception). See [`DATABASE.md`](./DATABASE.md). |
 | 19 | Bio | Short personal description shown in the desk overlay panel |
 | 20 | Links | `Set<URL>` — social/profile URLs (stored as a separate one-column child table: `desk_id`, `url`) |
 | 21 | Team ID | FK → `Team.ID` within this workspace |
