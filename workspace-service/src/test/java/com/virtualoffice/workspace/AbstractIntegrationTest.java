@@ -17,8 +17,13 @@
  */
 package com.virtualoffice.workspace;
 
+import com.virtualoffice.workspace.dto.request.CreateWorkspaceRequest;
+import com.virtualoffice.workspace.dto.response.WorkspaceResponse;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -61,5 +66,12 @@ public abstract class AbstractIntegrationTest {
     /** A reasonably unique, schema-valid workspace slug for tests sharing one DB. */
     protected static String uniqueSlug(String prefix) {
         return prefix + "-" + Long.toString(System.nanoTime(), 36);
+    }
+
+    /** Creates a workspace via the REST API; the owner becomes an active OWNER member. */
+    protected static WorkspaceResponse createWorkspace(TestRestTemplate rest, long ownerId) {
+        var body = new CreateWorkspaceRequest("WS", uniqueSlug("ws"), null, null, "UTC");
+        return rest.exchange("/api/workspace", HttpMethod.POST,
+                new HttpEntity<>(body, userHeaders(ownerId)), WorkspaceResponse.class).getBody();
     }
 }
