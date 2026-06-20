@@ -20,6 +20,7 @@ package com.virtualoffice.workspace.controller;
 import com.virtualoffice.workspace.AbstractIntegrationTest;
 import com.virtualoffice.workspace.dto.request.CreateMapObjectRequest;
 import com.virtualoffice.workspace.dto.response.MapObjectResponse;
+import com.virtualoffice.workspace.dto.request.UpdateMapObjectRequest;
 import com.virtualoffice.workspace.model.enums.MapObjectType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,6 +68,29 @@ class MapObjectControllerIT extends AbstractIntegrationTest {
         ResponseEntity<MapObjectResponse[]> list = rest.exchange("/api/workspace/" + wid + "/map-objects",
                 HttpMethod.GET, new HttpEntity<>(userHeaders(2L)), MapObjectResponse[].class);
         assertThat(list.getBody()).extracting(MapObjectResponse::id).doesNotContain(id);
+    }
+
+    @Test
+    void updatePersistsAcrossGet() {
+        Long wid = createWorkspace(rest, 4L).id();
+        Long id = create(wid, 4L, MapObjectType.COMPUTER).getBody().id();
+
+        // update
+        ResponseEntity<MapObjectResponse> updated = rest.exchange(
+                "/api/workspace/" + wid + "/map-objects/" + id, HttpMethod.PUT,
+                new HttpEntity<>(new UpdateMapObjectRequest("Renamed", 5, 6, 9), userHeaders(4L)),
+                MapObjectResponse.class);
+        assertThat(updated.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // re-read via the list endpoint (no single-object GET) -> update persisted?
+        MapObjectResponse[] list = rest.exchange("/api/workspace/" + wid + "/map-objects",
+                HttpMethod.GET, new HttpEntity<>(userHeaders(4L)), MapObjectResponse[].class).getBody();
+        assertThat(list).filteredOn(o -> o.id().equals(id)).singleElement().satisfies(o -> {
+            assertThat(o.label()).isEqualTo("Renamed");
+            assertThat(o.positionX()).isEqualTo(5);
+            assertThat(o.positionY()).isEqualTo(6);
+            assertThat(o.capacity()).isEqualTo(9);
+        });
     }
 
     @Test

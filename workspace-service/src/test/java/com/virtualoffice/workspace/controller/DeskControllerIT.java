@@ -139,6 +139,26 @@ class DeskControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void updatePersistsAcrossGet() {
+        Long wid = createWorkspace(rest, 9L).id();
+        Long deskId = seedMember(wid, 91L, true).getId();
+
+        // update own desk
+        rest.exchange("/api/workspace/" + wid + "/desks/" + deskId, HttpMethod.PUT,
+                new HttpEntity<>(new UpdateDeskRequest("Neo", null, "Engineer", "bio", null, null, null,
+                        List.of("https://neo.dev"), null), userHeaders(91L)),
+                DeskResponse.class);
+
+        // re-read with a separate GET /{deskId} -> update persisted?
+        DeskResponse got = rest.exchange("/api/workspace/" + wid + "/desks/" + deskId, HttpMethod.GET,
+                new HttpEntity<>(userHeaders(9L)), DeskResponse.class).getBody();
+        assertThat(got).isNotNull();
+        assertThat(got.fullName()).isEqualTo("Neo");
+        assertThat(got.title()).isEqualTo("Engineer");
+        assertThat(got.links()).containsExactly("https://neo.dev");
+    }
+
+    @Test
     void adminRemovesMemberButNotOwner() {
         Long wid = createWorkspace(rest, 6L).id();
         Long memberDeskId = seedMember(wid, 61L, true).getId();

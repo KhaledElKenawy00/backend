@@ -91,6 +91,33 @@ class TeamControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void updatePersistsAcrossGet() {
+        Long wid = createWorkspace(rest, 20L).id();
+        Long teamId = createTeam(wid, 20L, "Eng").getBody().id();
+
+        // stored? re-read via the list endpoint (no single-team GET exists)
+        TeamResponse[] afterCreate = rest.exchange("/api/workspace/" + wid + "/teams", HttpMethod.GET,
+                new HttpEntity<>(userHeaders(20L)), TeamResponse[].class).getBody();
+        assertThat(afterCreate).anySatisfy(t -> {
+            assertThat(t.id()).isEqualTo(teamId);
+            assertThat(t.name()).isEqualTo("Eng");
+        });
+
+        // update
+        rest.exchange("/api/workspace/" + wid + "/teams/" + teamId, HttpMethod.PUT,
+                new HttpEntity<>(new UpdateTeamRequest("Platform", "renamed"), userHeaders(20L)), TeamResponse.class);
+
+        // re-read -> update persisted?
+        TeamResponse[] afterUpdate = rest.exchange("/api/workspace/" + wid + "/teams", HttpMethod.GET,
+                new HttpEntity<>(userHeaders(20L)), TeamResponse[].class).getBody();
+        assertThat(afterUpdate).filteredOn(t -> t.id().equals(teamId)).singleElement()
+                .satisfies(t -> {
+                    assertThat(t.name()).isEqualTo("Platform");
+                    assertThat(t.description()).isEqualTo("renamed");
+                });
+    }
+
+    @Test
     void updateMissingTeamReturns404() {
         Long wid = createWorkspace(rest, 6L).id();
         ResponseEntity<String> r = rest.exchange(
