@@ -29,6 +29,8 @@ public interface DeskRepository extends JpaRepository<Desk, Long> {
 
     Optional<Desk> findByWorkspaceIdAndUserId(Long workspaceId, Long userId);
 
+    Optional<Desk> findByIdAndWorkspaceId(Long id, Long workspaceId);
+
     // membership guard — used by the access guard on every workspace-scoped request
     boolean existsByWorkspaceIdAndUserIdAndIsActiveTrue(Long workspaceId, Long userId);
 
