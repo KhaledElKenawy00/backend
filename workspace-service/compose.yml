@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: workspace
+      POSTGRES_USER: workspace
+      POSTGRES_PASSWORD: workspace
+    ports:
+      - "5432:5432"
+    volumes:
+      - workspace-pgdata:/var/lib/postgresql/data
+
+volumes:
+  workspace-pgdata:

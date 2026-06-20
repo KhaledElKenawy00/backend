@@ -1,0 +1,12 @@
+spring:
+  docker:
+    compose:
+      enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+# Deterministic secret so internal-endpoint tests can authenticate.
+workspace:
+  internal:
+    token: test-internal-token
