@@ -15,17 +15,14 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.workspace.service;
+package com.virtualoffice.workspace.dto.response;
 
-import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
-import com.virtualoffice.workspace.dto.response.LayoutResponse;
+import com.virtualoffice.workspace.model.enums.WorkspaceRole;
 
-public interface LayoutService {
-
-    LayoutResponse getLayout(Long workspaceId, Long requesterId);
-
-    LayoutResponse updateLayout(Long workspaceId, UpdateLayoutRequest request, Long requesterId);
-
-    // Unguarded assembly for server-to-server callers (Colyseus session boot); no membership check.
-    LayoutResponse getLayoutInternal(Long workspaceId);
+// Returned to chat-service / room-service for workspace-scoped authorization.
+public record MemberRoleResponse(
+        Long userId,
+        Long workspaceId,
+        WorkspaceRole role,
+        boolean isActive) {
 }

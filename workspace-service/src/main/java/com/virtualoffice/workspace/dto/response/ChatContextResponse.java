@@ -15,17 +15,11 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.workspace.service;
+package com.virtualoffice.workspace.dto.response;
 
-import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
-import com.virtualoffice.workspace.dto.response.LayoutResponse;
-
-public interface LayoutService {
-
-    LayoutResponse getLayout(Long workspaceId, Long requesterId);
-
-    LayoutResponse updateLayout(Long workspaceId, UpdateLayoutRequest request, Long requesterId);
-
-    // Unguarded assembly for server-to-server callers (Colyseus session boot); no membership check.
-    LayoutResponse getLayoutInternal(Long workspaceId);
+// The canonical workspace chat channel key chat-service / SkyOffice persist room chat to (D5).
+// workspace-service stores no messages — it only resolves the mapping.
+public record ChatContextResponse(
+        Long workspaceId,
+        String channelKey) {
 }

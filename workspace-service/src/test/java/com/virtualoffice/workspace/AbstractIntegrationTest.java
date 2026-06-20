@@ -63,6 +63,14 @@ public abstract class AbstractIntegrationTest {
         return headers;
     }
 
+    /** Headers a server-to-server caller carries for /api/internal/** (matches the test token). */
+    protected static HttpHeaders internalHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Token", "test-internal-token");
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return headers;
+    }
+
     /** A reasonably unique, schema-valid workspace slug for tests sharing one DB. */
     protected static String uniqueSlug(String prefix) {
         return prefix + "-" + Long.toString(System.nanoTime(), 36);

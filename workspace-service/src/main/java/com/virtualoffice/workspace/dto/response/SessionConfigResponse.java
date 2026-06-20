@@ -15,17 +15,23 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.workspace.service;
+package com.virtualoffice.workspace.dto.response;
 
-import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
-import com.virtualoffice.workspace.dto.response.LayoutResponse;
+import com.virtualoffice.workspace.model.enums.WorkspaceStatus;
 
-public interface LayoutService {
+import java.util.List;
+import java.util.UUID;
 
-    LayoutResponse getLayout(Long workspaceId, Long requesterId);
-
-    LayoutResponse updateLayout(Long workspaceId, UpdateLayoutRequest request, Long requesterId);
-
-    // Unguarded assembly for server-to-server callers (Colyseus session boot); no membership check.
-    LayoutResponse getLayoutInternal(Long workspaceId);
+/**
+ * Everything the forked Colyseus server loads on room boot: workspace metadata, the assembled
+ * layout, the active member desks (positions + avatars), and the active interactive map objects.
+ */
+public record SessionConfigResponse(
+        Long workspaceId,
+        String name,
+        WorkspaceStatus status,
+        UUID inviteToken,
+        LayoutResponse layout,
+        List<DeskResponse> desks,
+        List<MapObjectResponse> mapObjects) {
 }

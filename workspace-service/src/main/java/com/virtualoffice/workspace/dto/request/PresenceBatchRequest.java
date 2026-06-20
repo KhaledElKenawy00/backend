@@ -15,17 +15,14 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.workspace.service;
+package com.virtualoffice.workspace.dto.request;
 
-import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
-import com.virtualoffice.workspace.dto.response.LayoutResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 
-public interface LayoutService {
+import java.util.List;
 
-    LayoutResponse getLayout(Long workspaceId, Long requesterId);
-
-    LayoutResponse updateLayout(Long workspaceId, UpdateLayoutRequest request, Long requesterId);
-
-    // Unguarded assembly for server-to-server callers (Colyseus session boot); no membership check.
-    LayoutResponse getLayoutInternal(Long workspaceId);
+// Colyseus flushes many presence updates at once; cheaper than one call per event.
+public record PresenceBatchRequest(
+        @NotNull @Valid List<PresenceSyncRequest> updates) {
 }

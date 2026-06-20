@@ -15,17 +15,21 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.workspace.service;
+package com.virtualoffice.workspace.dto.response;
 
-import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
-import com.virtualoffice.workspace.dto.response.LayoutResponse;
+import com.virtualoffice.workspace.model.enums.AvatarCharacter;
+import com.virtualoffice.workspace.model.enums.WorkspaceRole;
 
-public interface LayoutService {
-
-    LayoutResponse getLayout(Long workspaceId, Long requesterId);
-
-    LayoutResponse updateLayout(Long workspaceId, UpdateLayoutRequest request, Long requesterId);
-
-    // Unguarded assembly for server-to-server callers (Colyseus session boot); no membership check.
-    LayoutResponse getLayoutInternal(Long workspaceId);
+// Returned to the forked Colyseus server on join so it can map sessionId -> userId and
+// initialize the Player (name, spawn position, avatar) from the desk.
+public record JoinValidationResponse(
+        Long userId,
+        Long workspaceId,
+        Long deskId,
+        String fullName,
+        AvatarCharacter avatarCharacter,
+        Integer spawnX,
+        Integer spawnY,
+        WorkspaceRole role,
+        boolean allowed) {
 }

@@ -15,17 +15,19 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.workspace.service;
+package com.virtualoffice.workspace.dto.response;
 
-import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
-import com.virtualoffice.workspace.dto.response.LayoutResponse;
+import com.virtualoffice.workspace.model.enums.ZoneType;
 
-public interface LayoutService {
-
-    LayoutResponse getLayout(Long workspaceId, Long requesterId);
-
-    LayoutResponse updateLayout(Long workspaceId, UpdateLayoutRequest request, Long requesterId);
-
-    // Unguarded assembly for server-to-server callers (Colyseus session boot); no membership check.
-    LayoutResponse getLayoutInternal(Long workspaceId);
+// Consumed by room-service for proximity / private-voice decisions.
+public record ZoneResponse(
+        Long id,
+        ZoneType type,
+        String name,
+        Integer x,
+        Integer y,
+        Integer width,
+        Integer height,
+        String voiceRoomId,
+        Integer proximityRadius) {
 }

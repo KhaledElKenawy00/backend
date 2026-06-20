@@ -15,17 +15,20 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.workspace.service;
+package com.virtualoffice.workspace.dto.request;
 
-import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
-import com.virtualoffice.workspace.dto.response.LayoutResponse;
+import com.virtualoffice.workspace.model.enums.DeskStatus;
+import jakarta.validation.constraints.NotNull;
 
-public interface LayoutService {
-
-    LayoutResponse getLayout(Long workspaceId, Long requesterId);
-
-    LayoutResponse updateLayout(Long workspaceId, UpdateLayoutRequest request, Long requesterId);
-
-    // Unguarded assembly for server-to-server callers (Colyseus session boot); no membership check.
-    LayoutResponse getLayoutInternal(Long workspaceId);
+/**
+ * Colyseus -> workspace-service presence sync. {@code status}/{@code statusEmoji}/position are
+ * optional; position should only be sent throttled (e.g. on leave or periodically), never per frame.
+ */
+public record PresenceSyncRequest(
+        @NotNull Long userId,
+        @NotNull Boolean isOnline,
+        DeskStatus status,
+        String statusEmoji,
+        Integer positionX,
+        Integer positionY) {
 }

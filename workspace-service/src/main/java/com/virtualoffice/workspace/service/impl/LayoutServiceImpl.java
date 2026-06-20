@@ -84,6 +84,12 @@ public class LayoutServiceImpl implements LayoutService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public LayoutResponse getLayoutInternal(Long workspaceId) {
+        return assemble(findOrThrow(workspaceId));
+    }
+
+    @Override
     public LayoutResponse updateLayout(Long workspaceId, UpdateLayoutRequest request, Long requesterId) {
         accessGuard.requireRole(workspaceId, requesterId, WorkspaceRole.ADMIN);
         Workspace ws = findOrThrow(workspaceId);
