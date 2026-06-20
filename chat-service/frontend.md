@@ -7,6 +7,8 @@
 
 ## How to Run
 
+> **Prerequisite — start `user-service` first.** It brings up the shared **RabbitMQ** broker that chat-service's room-channel consumer connects to (see arc §19). Chat-service still boots without RabbitMQ (the consumer connects lazily and retries), but you'll see connection-retry warnings in the log and the Room integration won't work until RabbitMQ is up.
+
 ```bash
 # 1. clone the repo and cd into the service
 cd backend/chat-service
@@ -18,10 +20,13 @@ export JAVA_HOME=/path/to/your/jdk
 # Windows (PowerShell)
 $env:JAVA_HOME = "C:\Users\Two Star\.jdks\openjdk-24.0.2"
 
-# 3. start mongo + redis (docker-compose.yml is included)
+# 3. start user-service FIRST — it brings up the shared RabbitMQ broker
+cd ../user-service && ./mvnw spring-boot:run   # then return here
+
+# 4. start mongo + redis (docker-compose.yml is included)
 docker compose up -d
 
-# 4. run the service
+# 5. run the service
 # Linux / Mac
 ./mvnw spring-boot:run
 

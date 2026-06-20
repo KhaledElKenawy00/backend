@@ -12,12 +12,24 @@ spring:
       port: 6379
       timeout: 5000ms
 
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
   docker:
     compose:
       lifecycle-management: start-and-stop
 
 server:
   port: 8084
+
+room:
+  exchange: room.exchange
+  channel:
+    queue: room.channel.queue
+    routing-key: room.channel.event
 
 management:
   endpoints:

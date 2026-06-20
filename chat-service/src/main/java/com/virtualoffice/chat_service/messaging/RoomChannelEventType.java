@@ -15,10 +15,11 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.chat_service.model;
+package com.virtualoffice.chat_service.messaging;
 
-public enum ChannelType {
-    GROUP,
-    DIRECT,
-    ROOM
+public enum RoomChannelEventType {
+    ROOM_CHANNEL_CREATE,
+    ROOM_CHANNEL_DELETE,
+    ROOM_CHANNEL_ADD_MEMBER,
+    ROOM_CHANNEL_REMOVE_MEMBER
 }

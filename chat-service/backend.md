@@ -200,12 +200,17 @@ mvnw.cmd test
 
 ## How to Run
 
+> **Start `user-service` first** — it brings up the shared **RabbitMQ** broker that chat-service consumes room-channel events from (see arc §19). Chat-service boots without it (the consumer retries lazily), but the Room integration stays offline until RabbitMQ is up.
+
 ```bash
 # set JAVA_HOME first
 export JAVA_HOME=/path/to/your/jdk          # Linux / Mac
 $env:JAVA_HOME = "C:\Users\Two Star\.jdks\openjdk-24.0.2"       # Windows (PowerShell)
 
-# start mongo + redis
+# start user-service FIRST (brings up the shared RabbitMQ broker)
+cd ../user-service && ./mvnw spring-boot:run   # then return to chat-service
+
+# start mongo + redis (chat-service owns these via its docker-compose.yml)
 docker compose up -d
 
 # run the service
@@ -216,4 +221,4 @@ docker compose up -d
 mvnw.cmd spring-boot:run
 ```
 
-Service starts on `http://localhost:8084`. Docker containers are auto-managed by Spring Boot's Docker Compose integration.
+Service starts on `http://localhost:8084`. Mongo + Redis are auto-managed by Spring Boot's Docker Compose integration; RabbitMQ is owned by user-service.

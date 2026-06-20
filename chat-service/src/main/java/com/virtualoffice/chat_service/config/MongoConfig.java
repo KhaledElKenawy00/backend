@@ -75,7 +75,10 @@ public class MongoConfig {
                 new IndexOptions()
                         .name("idx_workspace_name")
                         .unique(true)
-                        .partialFilterExpression(Filters.type("workspaceId", BsonType.INT32))
+                        .partialFilterExpression(Filters.and(
+                                Filters.type("workspaceId", BsonType.INT32),
+                                Filters.eq("type", "GROUP")
+                        ))
         );
     }
 

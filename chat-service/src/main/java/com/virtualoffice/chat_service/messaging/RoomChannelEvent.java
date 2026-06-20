@@ -15,10 +15,26 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.chat_service.model;
+package com.virtualoffice.chat_service.messaging;
 
-public enum ChannelType {
-    GROUP,
-    DIRECT,
-    ROOM
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.List;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RoomChannelEvent {
+
+    private String eventId;
+    private RoomChannelEventType type;
+    private String channelId;
+    private Integer workspaceId;
+    private String name;
+    private List<Integer> members;
+    private Integer userId;
 }
