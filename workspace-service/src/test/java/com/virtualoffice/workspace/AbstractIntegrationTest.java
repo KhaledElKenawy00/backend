@@ -18,22 +18,32 @@
 package com.virtualoffice.workspace;
 
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * Base for end-to-end tests: boots the full Spring context against a real PostgreSQL
- * (Testcontainers) on a random port. Flyway runs the real migrations against it, so the
- * schema under test is exactly what ships. The container is static — shared across all
- * subclasses for the JVM, started once.
+ * Base for end-to-end / repository tests: boots the full Spring context against a real
+ * PostgreSQL (Testcontainers) on a random port; Flyway runs the real migrations.
+ *
+ * Uses the Testcontainers <em>singleton</em> pattern — the container is started once in a
+ * static initializer and never stopped (the JVM exit + Ryuk reap it). This keeps it alive for
+ * the whole test run so Spring's cached context (shared across classes) stays valid, instead of
+ * the per-class @Container lifecycle that would tear the DB down under a reused context.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
 public abstract class AbstractIntegrationTest {
 
-    @Container
-    @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    static {
+        POSTGRES.start();
+    }
+
+    @DynamicPropertySource
+    static void datasourceProps(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+    }
 }
