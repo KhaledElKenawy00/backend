@@ -18,7 +18,10 @@
 package com.virtualoffice.workspace.service;
 
 import com.virtualoffice.workspace.dto.LayoutLayer;
+import com.virtualoffice.workspace.dto.LayoutTileset;
+import com.virtualoffice.workspace.dto.LayoutZone;
 import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
+import com.virtualoffice.workspace.model.enums.ZoneType;
 import com.virtualoffice.workspace.exception.ConflictException;
 import com.virtualoffice.workspace.model.Workspace;
 import com.virtualoffice.workspace.repository.MapLayerRepository;
@@ -69,6 +72,28 @@ class LayoutServiceImplTest {
                 List.of(new LayoutLayer("Ground", 0, false, "[]"),
                         new LayoutLayer("Walls", 0, true, "[]")),
                 null, null);
+        assertThatThrownBy(() -> service.updateLayout(1L, req, 5L))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void duplicateTilesetFirstGidIsRejected() {
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspaceWithVersion(0L)));
+        UpdateLayoutRequest req = new UpdateLayoutRequest(0L, 32, 80, 60, null,
+                List.of(new LayoutTileset("a", "a.png", 1, 32, 32, 8, 64),
+                        new LayoutTileset("b", "b.png", 1, 32, 32, 8, 64)),
+                null, null, null);
+        assertThatThrownBy(() -> service.updateLayout(1L, req, 5L))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void duplicateZoneVoiceRoomIdIsRejected() {
+        when(workspaceRepository.findById(1L)).thenReturn(Optional.of(workspaceWithVersion(0L)));
+        UpdateLayoutRequest req = new UpdateLayoutRequest(0L, 32, 80, 60, null, null, null,
+                List.of(new LayoutZone(ZoneType.MEETING_ROOM, "A", 0, 0, 1, 1, "v", null),
+                        new LayoutZone(ZoneType.MEETING_ROOM, "B", 2, 2, 1, 1, "v", null)),
+                null);
         assertThatThrownBy(() -> service.updateLayout(1L, req, 5L))
                 .isInstanceOf(IllegalArgumentException.class);
     }

@@ -78,6 +78,45 @@ class TeamServiceImplTest {
     }
 
     @Test
+    void updateRenamesToUniqueName() {
+        Team team = Team.builder().id(3L).workspaceId(1L).name("Eng").build();
+        when(teamRepository.findByIdAndWorkspaceId(3L, 1L)).thenReturn(Optional.of(team));
+        when(teamRepository.existsByWorkspaceIdAndName(1L, "Platform")).thenReturn(false);
+        when(teamRepository.save(any(Team.class))).thenAnswer(i -> i.getArgument(0));
+
+        TeamResponse r = service.updateTeam(1L, 3L, new UpdateTeamRequest("Platform", "desc"), 5L);
+        assertThat(r.name()).isEqualTo("Platform");
+    }
+
+    @Test
+    void updateToDuplicateNameIsConflict() {
+        Team team = Team.builder().id(3L).workspaceId(1L).name("Eng").build();
+        when(teamRepository.findByIdAndWorkspaceId(3L, 1L)).thenReturn(Optional.of(team));
+        when(teamRepository.existsByWorkspaceIdAndName(1L, "Ops")).thenReturn(true);
+        assertThatThrownBy(() -> service.updateTeam(1L, 3L, new UpdateTeamRequest("Ops", null), 5L))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void updateWithSameNameSkipsUniquenessCheck() {
+        Team team = Team.builder().id(3L).workspaceId(1L).name("Eng").build();
+        when(teamRepository.findByIdAndWorkspaceId(3L, 1L)).thenReturn(Optional.of(team));
+        when(teamRepository.save(any(Team.class))).thenAnswer(i -> i.getArgument(0));
+
+        // name unchanged + description only -> no existsBy lookup, no conflict
+        TeamResponse r = service.updateTeam(1L, 3L, new UpdateTeamRequest("Eng", "new desc"), 5L);
+        assertThat(r.description()).isEqualTo("new desc");
+        org.mockito.Mockito.verify(teamRepository, never()).existsByWorkspaceIdAndName(1L, "Eng");
+    }
+
+    @Test
+    void getTeamsRequiresMembership() {
+        when(teamRepository.findByWorkspaceId(1L)).thenReturn(java.util.List.of());
+        assertThat(service.getTeams(1L, 5L)).isEmpty();
+        org.mockito.Mockito.verify(accessGuard).requireMember(1L, 5L);
+    }
+
+    @Test
     void updateMissingTeamThrowsNotFound() {
         when(teamRepository.findByIdAndWorkspaceId(99L, 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.updateTeam(1L, 99L, new UpdateTeamRequest("X", null), 5L))

@@ -139,6 +139,17 @@ class InvitationServiceImplTest {
     }
 
     @Test
+    void acceptInviteWithNoExpiryNeverExpires() {
+        WorkspaceInvitation inv = invitation(InviteStatus.PENDING, null); // expiresAt == null
+        when(invitationRepository.findByToken(inv.getToken())).thenReturn(Optional.of(inv));
+        when(deskRepository.findByWorkspaceIdAndUserId(1L, 77L)).thenReturn(Optional.empty());
+        when(invitationRepository.save(any(WorkspaceInvitation.class))).thenAnswer(i -> i.getArgument(0));
+
+        InvitationResponse r = service.acceptInvite(inv.getToken().toString(), 77L);
+        assertThat(r.status()).isEqualTo(InviteStatus.ACCEPTED);
+    }
+
+    @Test
     void acceptExpiredInviteIsGone() {
         WorkspaceInvitation inv = invitation(InviteStatus.PENDING, Instant.now().minusSeconds(60));
         when(invitationRepository.findByToken(inv.getToken())).thenReturn(Optional.of(inv));

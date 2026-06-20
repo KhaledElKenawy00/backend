@@ -97,6 +97,22 @@ class MapObjectServiceImplTest {
     }
 
     @Test
+    void updateOnlyPositionYLeavesOthers() {
+        MapObject obj = MapObject.builder().id(2L).workspaceId(1L).label("keep")
+                .positionX(3).positionY(3).capacity(2).isActive(true).build();
+        when(repository.findByIdAndWorkspaceId(2L, 1L)).thenReturn(Optional.of(obj));
+        when(repository.save(any(MapObject.class))).thenAnswer(i -> i.getArgument(0));
+
+        MapObjectResponse r = service.updateMapObject(1L, 2L,
+                new UpdateMapObjectRequest(null, null, 99, null), 5L);
+
+        assertThat(r.positionY()).isEqualTo(99);
+        assertThat(r.label()).isEqualTo("keep");
+        assertThat(r.positionX()).isEqualTo(3);
+        assertThat(r.capacity()).isEqualTo(2);
+    }
+
+    @Test
     void updateMissingObjectThrowsNotFound() {
         when(repository.findByIdAndWorkspaceId(9L, 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.deleteMapObject(1L, 9L, 5L))

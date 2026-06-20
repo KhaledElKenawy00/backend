@@ -124,6 +124,36 @@ class WorkspaceServiceImplTest {
     }
 
     @Test
+    void updateAppliesAllFields() {
+        Workspace existing = Workspace.builder().id(1L).name("Old").slug("acme")
+                .ownerId(5L).status(WorkspaceStatus.ACTIVE).build();
+        when(workspaceRepository.findById(1L)).thenReturn(java.util.Optional.of(existing));
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        WorkspaceResponse r = service.updateWorkspace(1L,
+                new UpdateWorkspaceRequest("N", "desc", "logo", "Africa/Cairo"), 5L);
+
+        assertThat(r.name()).isEqualTo("N");
+        assertThat(r.description()).isEqualTo("desc");
+        assertThat(r.logoUrl()).isEqualTo("logo");
+        assertThat(r.defaultTimezone()).isEqualTo("Africa/Cairo");
+    }
+
+    @Test
+    void updateWithAllNullLeavesFieldsUnchanged() {
+        Workspace existing = Workspace.builder().id(1L).name("Old").slug("acme")
+                .ownerId(5L).description("keep").status(WorkspaceStatus.ACTIVE).build();
+        when(workspaceRepository.findById(1L)).thenReturn(java.util.Optional.of(existing));
+        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        WorkspaceResponse r = service.updateWorkspace(1L,
+                new UpdateWorkspaceRequest(null, null, null, null), 5L);
+
+        assertThat(r.name()).isEqualTo("Old");
+        assertThat(r.description()).isEqualTo("keep");
+    }
+
+    @Test
     void archiveIsOwnerOnly() {
         Workspace ws = Workspace.builder().id(1L).ownerId(5L).status(WorkspaceStatus.ACTIVE).build();
         when(workspaceRepository.findById(1L)).thenReturn(java.util.Optional.of(ws));

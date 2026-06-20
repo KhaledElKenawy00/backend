@@ -118,6 +118,21 @@ class SessionServiceImplTest {
     }
 
     @Test
+    void syncPresenceWithoutOptionalsOnlyTouchesOnlineAndLastSeen() {
+        Desk desk = activeDesk();
+        when(deskRepository.findByWorkspaceIdAndUserId(1L, 5L)).thenReturn(Optional.of(desk));
+        when(deskRepository.save(any(Desk.class))).thenAnswer(i -> i.getArgument(0));
+
+        // status / emoji / position all null -> those if-branches take the "skip" path
+        service.syncPresence(1L, new PresenceSyncRequest(5L, false, null, null, null, null));
+
+        assertThat(desk.isOnline()).isFalse();
+        assertThat(desk.getLastSeenAt()).isNotNull();
+        assertThat(desk.getStatus()).isEqualTo(DeskStatus.ACTIVE);   // unchanged
+        assertThat(desk.getPositionX()).isEqualTo(100);              // unchanged
+    }
+
+    @Test
     void syncPresenceForMissingDeskIsNotFound() {
         when(deskRepository.findByWorkspaceIdAndUserId(1L, 5L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.syncPresence(1L, new PresenceSyncRequest(5L, true, null, null, null, null)))
