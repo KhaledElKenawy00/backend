@@ -1,42 +1,34 @@
-/*
- * Copyright (c) 2025 My Virtual Office
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- */
 package com.virtualoffice.service.user.domain.entity;
 
 import com.virtualoffice.service.user.domain.enumuration.VerificationRequestStatus;
+import com.virtualoffice.service.user.domain.enumuration.VerificationRequestType;
 import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "verification_requests")
+@Table(
+        name = "verification_requests",
+        indexes = {
+                @Index(name = "idx_user_type", columnList = "user_id,type"),
+                @Index(name = "idx_otp_hash", columnList = "otp_hash")
+        }
+)
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+
+
 public class VerificationRequest {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "otp", nullable = false, length = 10)
+    @Column(name = "otp_hash", nullable = false)
     private String otp;
 
     @Enumerated(EnumType.STRING)
@@ -49,7 +41,12 @@ public class VerificationRequest {
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false)
+    private VerificationRequestType type;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
 }

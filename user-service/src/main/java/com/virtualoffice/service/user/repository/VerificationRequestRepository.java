@@ -1,31 +1,26 @@
-/*
- * Copyright (c) 2025 My Virtual Office
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- */
 package com.virtualoffice.service.user.repository;
 
 import com.virtualoffice.service.user.domain.entity.VerificationRequest;
 import com.virtualoffice.service.user.domain.enumuration.VerificationRequestStatus;
+import com.virtualoffice.service.user.domain.enumuration.VerificationRequestType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Repository
 public interface VerificationRequestRepository extends JpaRepository<VerificationRequest, Long> {
 
-    Optional<VerificationRequest> findByUserIdAndStatus(Long userId, VerificationRequestStatus status);
+    // Get the OTP
+    Optional<VerificationRequest> getOtpByUserAndType(
+            Long userId, VerificationRequestType type, VerificationRequestStatus status);
+
+    // Delete all expired records (used by the scheduler)
+    @Modifying
+    @Query("DELETE FROM VerificationRequest v WHERE v.expiresAt < :now")
+    void deleteAllExpired(@Param("now") LocalDateTime now);
 }

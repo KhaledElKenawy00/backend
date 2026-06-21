@@ -32,6 +32,7 @@ public class AuthResponse {
     private String firstName;
     private String lastName;
     private String errorMessage;
+    private long id;
 
     public static AuthResponse withError(String errorMessage) {
         AuthResponse authResponse = new AuthResponse();
