@@ -21,6 +21,7 @@ import com.virtualoffice.service.user.dto.AuthResponse;
 import com.virtualoffice.service.user.dto.LoginRequest;
 import com.virtualoffice.service.user.dto.RegisterRequest;
 import com.virtualoffice.service.user.service.AuthService;
+import com.virtualoffice.service.user.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +31,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
-
+    private final NotificationService notificationService;
     private final AuthService authService;
 
     // Post api to register new user
