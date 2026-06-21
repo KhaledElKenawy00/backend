@@ -19,21 +19,27 @@ package com.virtualoffice.service.user.service;
 
 import com.virtualoffice.service.user.domain.entity.User;
 import com.virtualoffice.service.user.domain.enumuration.AccountStatus;
+import com.virtualoffice.service.user.domain.enumuration.NotificationType;
 import com.virtualoffice.service.user.dto.AuthResponse;
 import com.virtualoffice.service.user.dto.LoginRequest;
 import com.virtualoffice.service.user.dto.RegisterRequest;
+import com.virtualoffice.service.user.notifications.NotificationPublisher;
 import com.virtualoffice.service.user.repository.UserRepository;
 import com.virtualoffice.service.user.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.type.descriptor.jdbc.OracleJsonBlobJdbcType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+    private final NotificationService notificationService;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
@@ -63,6 +69,10 @@ public class AuthService {
 
         // Generate a JWT token for the new user
         String token = jwtUtil.generateToken(user.getEmail());
+
+
+        // Send a notification to the user
+        notificationService.registerNotification(user);
 
         // Return the token
         return new AuthResponse(token, user.getEmail(), user.getFirstName(), user.getLastName(), "None", user.getId());

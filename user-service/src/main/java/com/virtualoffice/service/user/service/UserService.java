@@ -37,6 +37,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final NotificationService notificationService;
 
     public ResponseEntity<ApiResponse> getUserData() {
         User user = getCurrentUser();
@@ -109,6 +110,10 @@ public class UserService {
         // Save new hashed password
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+
+        // send a notification
+        notificationService.passwordResetNotification(user);
+
         return ResponseEntity.ok(new ApiResponse("succeeded"));
     }
 
