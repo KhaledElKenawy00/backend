@@ -4,7 +4,6 @@ import com.virtualoffice.service.user.domain.entity.User;
 import com.virtualoffice.service.user.domain.enumuration.NotificationType;
 import com.virtualoffice.service.user.notifications.NotificationPublisher;
 import lombok.RequiredArgsConstructor;
-import org.aspectj.weaver.ast.Not;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;

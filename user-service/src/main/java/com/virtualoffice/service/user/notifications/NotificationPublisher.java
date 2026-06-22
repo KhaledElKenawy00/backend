@@ -3,6 +3,7 @@ package com.virtualoffice.service.user.notifications;
 import com.virtualoffice.service.user.domain.enumuration.NotificationType;
 import com.virtualoffice.service.user.dto.NotificationEvent;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class NotificationPublisher {
 
@@ -34,9 +36,7 @@ public class NotificationPublisher {
         try {
             notificationsRabbitTemplate.convertAndSend(exchange, routingKey, event);
         } catch (Exception e) {
-            // Never let a notification failure break the actual business logic
-            // log it and move on
-            System.err.println("Failed to publish notification: " + e.getMessage());
+            log.error("Failed to publish notification {}: {}", type, e.getMessage());
         }
     }
 }

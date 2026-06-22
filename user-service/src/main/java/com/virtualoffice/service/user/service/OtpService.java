@@ -41,9 +41,9 @@ public class OtpService {
                 .orElseThrow(() -> new RuntimeException("No user found with this email"));
 
         VerificationRequest request = verificationRequestRepository
-                .getOtpByUserAndType(
+                .getOtpByUser_IdAndTypeAndStatus(
                         user.getId(), type, VerificationRequestStatus.PENDING)
-                .orElseThrow(null);
+                .orElse(null);
 
         if (request == null){
             return new ApiResponse("No Pending OTP found");
