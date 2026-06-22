@@ -23,9 +23,11 @@ import com.virtualoffice.room_service.dto.response.RoomResponse;
 import com.virtualoffice.room_service.service.PresenceService;
 import com.virtualoffice.room_service.service.RoomPushService;
 import com.virtualoffice.room_service.service.RoomService;
+import com.virtualoffice.room_service.util.AgoraTokenBuilder;
 import com.virtualoffice.room_service.util.UserContext;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,23 +42,34 @@ public class RoomSessionController {
     private final PresenceService presenceService;
     private final RoomPushService roomPushService;
 
+    @Value("${room.agora.app-id}")
+    private String agoraAppId;
+
+    @Value("${room.agora.app-certificate:}")
+    private String agoraAppCertificate;
+
     @PostMapping("/{id}/join")
     public ResponseEntity<JoinRoomResponse> join(
             @PathVariable String id,
             HttpServletRequest httpRequest) {
 
         UserContext.UserInfo user = UserContext.fromRequest(httpRequest);
-        RoomResponse room = roomService.getRoom(id, user.getUserId());
+        RoomResponse room = roomService.ensureMemberAndGet(id, user.getUserId());
 
         ParticipantResponse joined = presenceService.join(id, user.getUserId(), room.getMaxParticipants());
         if (joined != null) {
             roomPushService.participantJoined(id, joined);
         }
 
+        String agoraToken = AgoraTokenBuilder.buildToken(
+                agoraAppId, agoraAppCertificate,
+                room.getAgoraChannelName(), user.getUserId(), 3600);
+
         List<ParticipantResponse> participants = presenceService.listParticipants(id);
         return ResponseEntity.ok(JoinRoomResponse.builder()
                 .room(room)
                 .agoraChannelName(room.getAgoraChannelName())
+                .agoraToken(agoraToken)
                 .participants(participants)
                 .build());
     }

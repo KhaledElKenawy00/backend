@@ -27,12 +27,14 @@ room:
     routing-key: room.channel.event
   agora:
     channel-prefix: room-
+    app-id: 5db80389fc284a3a8c166979882f118d
+    app-certificate: "a6790438be834910b050de22cfcf2555"
   redis:
     ticket-prefix: "room:ws-ticket:"
   presence:
     alive-ttl-seconds: 30
   ws:
-    endpoint: /api/rooms/connect
+    endpoint: /ws/rooms
     ticket-ttl-seconds: 60
 
 management:

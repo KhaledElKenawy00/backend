@@ -110,7 +110,7 @@ public class RoomServiceImpl implements RoomService {
     public PaginatedResponse<RoomResponse> getRooms(Integer workspaceId, Integer userId, int page, int limit) {
         PageRequest pageRequest = PageRequest.of(page - 1, limit, Sort.by(Sort.Direction.DESC, "updatedAt"));
 
-        Page<Room> roomPage = roomRepository.findByWorkspaceIdAndMember(workspaceId, userId, pageRequest);
+        Page<Room> roomPage = roomRepository.findByWorkspaceId(workspaceId, pageRequest);
 
         List<RoomResponse> rooms = roomPage.getContent()
                 .stream()
@@ -188,6 +188,18 @@ public class RoomServiceImpl implements RoomService {
     public boolean isMember(String roomId, Integer userId) {
         Room room = roomRepository.findById(new ObjectId(roomId)).orElse(null);
         return room != null && room.getMembers() != null && room.getMembers().contains(userId);
+    }
+
+    @Override
+    public RoomResponse ensureMemberAndGet(String roomId, Integer userId) {
+        Room room = roomRepository.findById(new ObjectId(roomId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "room not found"));
+        if (room.getMembers() == null || !room.getMembers().contains(userId)) {
+            roomRepository.addMember(room.getId(), userId, Instant.now());
+            room = roomRepository.findById(new ObjectId(roomId))
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "room not found"));
+        }
+        return RoomMapper.toResponse(room);
     }
 
     private Room loadMemberRoom(String roomId, Integer userId) {
