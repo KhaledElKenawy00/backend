@@ -30,6 +30,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -121,5 +123,15 @@ public class UserService {
         return getCurrentUser();
     }
 
-
+    public ResponseEntity<List<Map<String, Object>>> getAllUsers() {
+        List<Map<String, Object>> users = userRepository.findAll().stream()
+                .map(u -> Map.<String, Object>of(
+                        "id", u.getId(),
+                        "firstName", u.getFirstName(),
+                        "lastName", u.getLastName(),
+                        "email", u.getEmail()
+                ))
+                .toList();
+        return ResponseEntity.ok(users);
+    }
 }

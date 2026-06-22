@@ -16,8 +16,9 @@ import java.util.Optional;
 public interface VerificationRequestRepository extends JpaRepository<VerificationRequest, Long> {
 
     // Get the OTP
+    @Query("SELECT v FROM VerificationRequest v WHERE v.user.id = :userId AND v.type = :type AND v.status = :status ORDER BY v.createdAt DESC LIMIT 1")
     Optional<VerificationRequest> getOtpByUserAndType(
-            Long userId, VerificationRequestType type, VerificationRequestStatus status);
+            @Param("userId") Long userId, @Param("type") VerificationRequestType type, @Param("status") VerificationRequestStatus status);
 
     // Delete all expired records (used by the scheduler)
     @Modifying

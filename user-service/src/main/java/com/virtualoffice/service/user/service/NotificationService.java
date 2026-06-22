@@ -15,7 +15,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class NotificationService {
     private final NotificationPublisher notificationPublisher;
-    private final OtpService otpService;
 
     public void registerNotification(User user) {
         notificationPublisher.publish(NotificationType.SIGNUP_SUCCESS, Map.of(

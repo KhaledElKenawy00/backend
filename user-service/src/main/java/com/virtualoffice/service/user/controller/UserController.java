@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/users")
@@ -50,6 +52,11 @@ public class UserController {
     @PostMapping("/me/photo")
     public ResponseEntity<ApiResponse> uploadPhoto(@RequestParam("file") MultipartFile file) {
         return userService.uploadPhoto(file);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Map<String, Object>>> getAllUsers() {
+        return userService.getAllUsers();
     }
 
     @GetMapping("/me/photo")
