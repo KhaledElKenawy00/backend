@@ -38,8 +38,8 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
         AuthResponse authResponse = authService.register(request);
-        if (!authResponse.getErrorMessage().equals("None")) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(authResponse);
+        if (!"None".equals(authResponse.getErrorMessage())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(authResponse);
         }
         return ResponseEntity.ok(authResponse);
     }
@@ -49,8 +49,8 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
         AuthResponse authResponse = authService.login(request);
-        if (!authResponse.getErrorMessage().equals("None")) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(authResponse);
+        if (!"None".equals(authResponse.getErrorMessage())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(authResponse);
         }
         return ResponseEntity.ok(authResponse);
     }

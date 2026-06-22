@@ -27,7 +27,6 @@ import com.virtualoffice.service.user.notifications.NotificationPublisher;
 import com.virtualoffice.service.user.repository.UserRepository;
 import com.virtualoffice.service.user.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.type.descriptor.jdbc.OracleJsonBlobJdbcType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
