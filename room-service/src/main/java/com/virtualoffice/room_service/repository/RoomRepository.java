@@ -34,6 +34,9 @@ public interface RoomRepository extends MongoRepository<Room, ObjectId> {
     @Query("{ 'workspaceId': ?0, 'members': ?1 }")
     Page<Room> findByWorkspaceIdAndMember(Integer workspaceId, Integer userId, Pageable pageable);
 
+    @Query("{ 'workspaceId': ?0 }")
+    Page<Room> findByWorkspaceId(Integer workspaceId, Pageable pageable);
+
     @Query("{ '_id': ?0 }")
     @Update("{ '$addToSet': { 'members': ?1 }, '$set': { 'updatedAt': ?2 } }")
     long addMember(ObjectId roomId, Integer userId, Instant updatedAt);

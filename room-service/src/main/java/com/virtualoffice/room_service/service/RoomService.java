@@ -39,4 +39,7 @@ public interface RoomService {
     void removeMember(String roomId, Integer targetUserId, Integer requesterUserId);
 
     boolean isMember(String roomId, Integer userId);
+
+    /** Returns room details, auto-adding userId as member if not already one. */
+    RoomResponse ensureMemberAndGet(String roomId, Integer userId);
 }

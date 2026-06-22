@@ -31,5 +31,6 @@ import java.util.List;
 public class JoinRoomResponse {
     private RoomResponse room;
     private String agoraChannelName;
+    private String agoraToken;
     private List<ParticipantResponse> participants;
 }
