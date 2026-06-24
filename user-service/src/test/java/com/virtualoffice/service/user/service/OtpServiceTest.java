@@ -82,7 +82,7 @@ class OtpServiceTest {
     @Test
     void verifyReturnsNoPendingWhenNoOtpExists() {
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user()));
-        when(verificationRequestRepository.getOtpByUser_IdAndTypeAndStatus(
+        when(verificationRequestRepository.getOtpByUserAndType(
                 1L, VerificationRequestType.PASSWORD_RESET, VerificationRequestStatus.PENDING))
                 .thenReturn(Optional.empty());
 
@@ -95,7 +95,7 @@ class OtpServiceTest {
     @Test
     void verifyReturnsInvalidWhenOtpDoesNotMatch() {
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user()));
-        when(verificationRequestRepository.getOtpByUser_IdAndTypeAndStatus(
+        when(verificationRequestRepository.getOtpByUserAndType(
                 1L, VerificationRequestType.PASSWORD_RESET, VerificationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending(LocalDateTime.now().plusMinutes(5))));
         when(passwordEncoder.matches("000000", "hashed")).thenReturn(false);
@@ -109,7 +109,7 @@ class OtpServiceTest {
     void verifyApprovesWhenOtpMatches() {
         VerificationRequest request = pending(LocalDateTime.now().plusMinutes(5));
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user()));
-        when(verificationRequestRepository.getOtpByUser_IdAndTypeAndStatus(
+        when(verificationRequestRepository.getOtpByUserAndType(
                 1L, VerificationRequestType.PASSWORD_RESET, VerificationRequestStatus.PENDING))
                 .thenReturn(Optional.of(request));
         when(passwordEncoder.matches("654321", "hashed")).thenReturn(true);
@@ -124,7 +124,7 @@ class OtpServiceTest {
     @Test
     void verifyThrowsWhenOtpExpired() {
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user()));
-        when(verificationRequestRepository.getOtpByUser_IdAndTypeAndStatus(
+        when(verificationRequestRepository.getOtpByUserAndType(
                 1L, VerificationRequestType.PASSWORD_RESET, VerificationRequestStatus.PENDING))
                 .thenReturn(Optional.of(pending(LocalDateTime.now().minusMinutes(1))));
 
