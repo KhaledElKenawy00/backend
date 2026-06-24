@@ -110,7 +110,10 @@ public class RoomServiceImpl implements RoomService {
     public PaginatedResponse<RoomResponse> getRooms(Integer workspaceId, Integer userId, int page, int limit) {
         PageRequest pageRequest = PageRequest.of(page - 1, limit, Sort.by(Sort.Direction.DESC, "updatedAt"));
 
-        Page<Room> roomPage = roomRepository.findByWorkspaceId(workspaceId, pageRequest);
+        // Listing is membership-filtered (backend.md): a caller only sees rooms they belong to,
+        // not every room in the workspace. Using the unfiltered findByWorkspaceId leaked private
+        // rooms to non-members.
+        Page<Room> roomPage = roomRepository.findByWorkspaceIdAndMember(workspaceId, userId, pageRequest);
 
         List<RoomResponse> rooms = roomPage.getContent()
                 .stream()
