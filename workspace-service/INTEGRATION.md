@@ -214,8 +214,14 @@ composes anim strings. Adding a character = enum value + client sprite atlas, no
    3. chat-service: enforce workspace roles via `WorkspaceClient` (§5.2).
    4. room-service: validate membership + cache `/zones` via `WorkspaceClient` (§4.1).
    5. room-service: proximity/zone grouping + Agora channel assignment (§4.3).
-3. **SkyOffice server fork** (§1, §2) against a seeded demo workspace (TASKS Phase 13).
-4. **SkyOffice client map rewrite** (§3) + position push to room-service (§4.2).
+3. **SkyOffice server fork** (§1, §2) against a seeded demo workspace (TASKS Phase 13). **Done**
+   (SkyOffice branch `feature/backend-integration`): onAuth JWT+join-validation, onJoin/onLeave
+   presence, session-config boot, batched position push (§4.2).
+4. **API gateway** (Phase 11 / D7) — JWT edge validation, `X-User-Id`/`X-User-Role` injection,
+   `/api/internal/**` blocked, routes to all services. **Done.** user-service now carries `userId`
+   as a JWT claim.
+5. **SkyOffice client map rewrite** (§3) — build the Phaser tilemap from `GET …/layout`, spawn from
+   the desk. *Remaining.*
 
 > Each backend step above is **one focused commit, one service** — a cross-service contract change
 > (e.g. a new event field) lands in its own commit per side.
@@ -224,10 +230,10 @@ composes anim strings. Adding a character = enum value + client sprite atlas, no
 
 ## 8. Open items to confirm as services mature
 
-- JWT verification in Colyseus: shared secret vs. a user-service `/verify` call. The login/register
-  `AuthResponse` already returns `userId`; the JWT subject is the user's **email**, so the fork must
-  resolve email→userId (add a `userId` JWT claim, or a user-service lookup) — the gateway does not
-  yet inject `X-User-Id`.
+- ~~JWT verification in Colyseus: shared secret vs. a user-service `/verify` call.~~ **Resolved:**
+  shared secret. user-service now mints a `userId` JWT claim; the Colyseus fork verifies HS256
+  locally (Node `crypto`) and reads `userId`, and the gateway injects `X-User-Id` from the same
+  claim for HTTP. No `/verify` endpoint added.
 - ~~room-service ↔ Colyseus position feed~~ **Resolved (§4.2):** SkyOffice pushes batches to
   room-service over `X-Internal-Token`; room-service does not subscribe to Colyseus.
 - Server-side Agora token minting (room-service v2) vs. App-ID-only (v1).
