@@ -17,13 +17,14 @@
  */
 package com.virtualoffice.room_service.client;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
- * Abstraction over workspace-service's internal API (INTEGRATION.md §4.1). room-service does not
- * store workspace roles; it asks workspace-service on demand so a user removed from the workspace
- * can no longer create or join voice rooms. All calls authenticate with the shared
- * {@code X-Internal-Token}.
+ * Abstraction over workspace-service's internal API (INTEGRATION.md §4.1, §4.3). room-service does
+ * not store workspace roles or geometry; it asks workspace-service on demand so a user removed from
+ * the workspace can no longer create or join voice rooms, and zone edits take effect quickly. All
+ * calls authenticate with the shared {@code X-Internal-Token}.
  */
 public interface WorkspaceClient {
 
@@ -37,4 +38,10 @@ public interface WorkspaceClient {
      * {@code minRole}. Throws 403 otherwise (no active desk, insufficient role).
      */
     void requireRole(int workspaceId, int userId, WorkspaceRole minRole);
+
+    /**
+     * Returns the workspace's voice zones, cached briefly. Drives proximity/zone voice grouping
+     * (§4.3); the cache spares workspace-service a call on every position batch.
+     */
+    List<Zone> getZones(int workspaceId);
 }

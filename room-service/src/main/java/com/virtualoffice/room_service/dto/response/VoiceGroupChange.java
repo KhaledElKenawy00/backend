@@ -17,31 +17,16 @@
  */
 package com.virtualoffice.room_service.dto.response;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import java.util.List;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class WebSocketEvent<T> {
-
-    private String action;
-    private T payload;
-
-    public static final String PARTICIPANT_JOINED = "PARTICIPANT_JOINED";
-    public static final String PARTICIPANT_LEFT = "PARTICIPANT_LEFT";
-    public static final String STATE_CHANGED = "STATE_CHANGED";
-    public static final String ROOM_UPDATED = "ROOM_UPDATED";
-    public static final String ROOM_CLOSED = "ROOM_CLOSED";
-    public static final String VOICE_GROUP_CHANGED = "VOICE_GROUP_CHANGED";
-
-    public static <T> WebSocketEvent<T> of(String action, T payload) {
-        return WebSocketEvent.<T>builder()
-                .action(action)
-                .payload(payload)
-                .build();
-    }
+/**
+ * Tells one avatar which Agora voice channel to be in after a position update (INTEGRATION.md §4.3).
+ * Broadcast as the payload of a {@code VOICE_GROUP_CHANGED} event. A null {@code channel} means the
+ * avatar should leave voice (became a lone proximity singleton). {@code peers} are the other members
+ * of the same channel, which the client can use for distance-based volume falloff.
+ */
+public record VoiceGroupChange(
+        Integer userId,
+        String channel,
+        List<Integer> peers) {
 }

@@ -24,6 +24,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
@@ -35,6 +36,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.http.HttpMethod.GET;
 
 /**
@@ -48,12 +50,14 @@ class WorkspaceClientImplTest {
     private static final String TOKEN = "secret-token";
     private static final String ROLE_URL = BASE_URL + "/api/internal/workspace/1/members/2/role";
 
+    private static final long ZONES_TTL_SECONDS = 60;
+
     /** Builds a client whose RestClient is intercepted by a freshly-stubbed mock server. */
     private WorkspaceClient clientStubbedWith(Consumer<MockRestServiceServer> stub) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         stub.accept(server);
-        return new WorkspaceClientImpl(builder, BASE_URL, TOKEN);
+        return new WorkspaceClientImpl(builder, BASE_URL, TOKEN, ZONES_TTL_SECONDS);
     }
 
     @Test
@@ -135,6 +139,29 @@ class WorkspaceClientImplTest {
                         MediaType.APPLICATION_JSON)));
 
         assertForbidden(() -> client.requireRole(1, 2, WorkspaceRole.MEMBER));
+    }
+
+    @Test
+    void getZonesParsesAndCachesWithinTtl() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        // The endpoint must be hit at most once; the second getZones call is served from cache.
+        server.expect(once(), requestTo(BASE_URL + "/api/internal/workspace/1/zones"))
+                .andExpect(method(GET))
+                .andExpect(header(WorkspaceClientImpl.HEADER_INTERNAL_TOKEN, TOKEN))
+                .andRespond(withSuccess("""
+                        [{"id":5,"type":"MEETING_ROOM","name":"Sync","x":0,"y":0,"width":100,"height":100,\
+                        "voiceRoomId":"voice-5","proximityRadius":null}]""", MediaType.APPLICATION_JSON));
+        WorkspaceClient client = new WorkspaceClientImpl(builder, BASE_URL, TOKEN, ZONES_TTL_SECONDS);
+
+        List<Zone> first = client.getZones(1);
+        List<Zone> second = client.getZones(1);
+
+        assertThat(first).hasSize(1);
+        assertThat(first.get(0).voiceRoomId()).isEqualTo("voice-5");
+        assertThat(first.get(0).type()).isEqualTo("MEETING_ROOM");
+        assertThat(second).isEqualTo(first);
+        server.verify();
     }
 
     private static void assertForbidden(Runnable call) {

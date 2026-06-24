@@ -20,35 +20,49 @@ package com.virtualoffice.room_service.client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * {@link WorkspaceClient} backed by an HTTP call to workspace-service's internal API, carrying the
  * shared {@code X-Internal-Token}. Maps 404 (no active desk) to {@link Optional#empty()}; surfaces
  * an unreachable workspace-service as 503 so callers fail closed rather than silently allowing.
+ * Zone reads are cached for a short TTL so a high-frequency position feed does not hammer
+ * workspace-service.
  */
 @Component
 public class WorkspaceClientImpl implements WorkspaceClient {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceClientImpl.class);
     private static final String MEMBER_ROLE_PATH = "/api/internal/workspace/{workspaceId}/members/{userId}/role";
+    private static final String ZONES_PATH = "/api/internal/workspace/{workspaceId}/zones";
+    private static final ParameterizedTypeReference<List<Zone>> ZONE_LIST = new ParameterizedTypeReference<>() {
+    };
     static final String HEADER_INTERNAL_TOKEN = "X-Internal-Token";
 
     private final RestClient restClient;
+    private final long zonesTtlNanos;
+    private final Map<Integer, CachedZones> zonesCache = new ConcurrentHashMap<>();
 
     public WorkspaceClientImpl(RestClient.Builder builder,
                                @Value("${workspace.service.base-url}") String baseUrl,
-                               @Value("${workspace.service.internal-token}") String internalToken) {
+                               @Value("${workspace.service.internal-token}") String internalToken,
+                               @Value("${workspace.service.zones-cache-ttl-seconds:30}") long zonesTtlSeconds) {
         this.restClient = builder
                 .baseUrl(baseUrl)
                 .defaultHeader(HEADER_INTERNAL_TOKEN, internalToken)
                 .build();
+        this.zonesTtlNanos = Duration.ofSeconds(zonesTtlSeconds).toNanos();
     }
 
     @Override
@@ -83,7 +97,37 @@ public class WorkspaceClientImpl implements WorkspaceClient {
         }
     }
 
+    @Override
+    public List<Zone> getZones(int workspaceId) {
+        CachedZones cached = zonesCache.get(workspaceId);
+        if (cached != null && !cached.isExpired()) {
+            return cached.zones();
+        }
+        try {
+            List<Zone> zones = restClient.get()
+                    .uri(ZONES_PATH, workspaceId)
+                    .retrieve()
+                    .body(ZONE_LIST);
+            List<Zone> result = zones != null ? List.copyOf(zones) : List.of();
+            zonesCache.put(workspaceId, new CachedZones(result, System.nanoTime() + zonesTtlNanos));
+            return result;
+        } catch (RestClientException e) {
+            log.error("workspace-service zones lookup failed for workspace {}: {}", workspaceId, e.getMessage());
+            // Serve stale zones if we have them rather than dropping voice grouping entirely.
+            if (cached != null) {
+                return cached.zones();
+            }
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "workspace-service unavailable");
+        }
+    }
+
     /** Internal signal that the role endpoint returned 404 (no active desk). */
     private static final class NotAMemberException extends RuntimeException {
+    }
+
+    private record CachedZones(List<Zone> zones, long expiryNanos) {
+        boolean isExpired() {
+            return System.nanoTime() - expiryNanos >= 0;
+        }
     }
 }
