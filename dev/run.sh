@@ -63,8 +63,10 @@ log "building services (first run downloads deps, be patient)…"
 
 # ── 3. Start the services ───────────────────────────────────────────────────────────────────────
 # workspace-service owns its own compose.yml; disable it so it uses the shared infra above.
+# Postgres is published on host 5433 (see compose.yml), so point workspace-service there.
 # DEMO_SEED=true makes chat/room seed their demo data (workspace-service seeds via Flyway).
-start_jar workspace-service SPRING_DOCKER_COMPOSE_ENABLED=false
+start_jar workspace-service SPRING_DOCKER_COMPOSE_ENABLED=false \
+  WORKSPACE_DB_URL=jdbc:postgresql://localhost:5433/workspace
 start_jar chat-service DEMO_SEED=true
 start_jar room-service DEMO_SEED=true
 start_jar gateway-api
