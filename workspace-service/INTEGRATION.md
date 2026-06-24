@@ -220,8 +220,11 @@ composes anim strings. Adding a character = enum value + client sprite atlas, no
 4. **API gateway** (Phase 11 / D7) — JWT edge validation, `X-User-Id`/`X-User-Role` injection,
    `/api/internal/**` blocked, routes to all services. **Done.** user-service now carries `userId`
    as a JWT claim.
-5. **SkyOffice client map rewrite** (§3) — build the Phaser tilemap from `GET …/layout`, spawn from
-   the desk. *Remaining.*
+5. **SkyOffice client map rewrite** (§3) — build the Phaser tilemap from `GET …/layout`, place
+   objects from `/map-objects`, spawn from `/desks/me`, auto-join from the URL token. **Done**
+   (SkyOffice branch `feature/backend-integration`); seeded via `R__seed_demo.sql` (Phase 13).
+   Remaining client polish: consuming `VOICE_GROUP_CHANGED` → Agora (§4), forwarding chat to
+   chat-service over STOMP (§5).
 
 > Each backend step above is **one focused commit, one service** — a cross-service contract change
 > (e.g. a new event field) lands in its own commit per side.
