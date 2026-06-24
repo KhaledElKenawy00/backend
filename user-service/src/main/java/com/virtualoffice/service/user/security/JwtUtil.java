@@ -43,16 +43,32 @@ public class JwtUtil {
     }
     // Creates a signed JWT containing the user's email
     public String generateToken(String email) {
-        return Jwts.builder()
+        return generateToken(email, null);
+    }
+
+    // Creates a signed JWT carrying the user's email (subject) and persistent id (claim). The
+    // gateway reads the id claim to inject the trusted X-User-Id header for downstream services.
+    public String generateToken(String email, Long userId) {
+        var builder = Jwts.builder()
                 .setSubject(email)                                        // who the token belongs to
                 .setIssuedAt(new Date())                                  // when it was created
-                .setExpiration(new Date(System.currentTimeMillis() + expiration)) // when it expires
+                .setExpiration(new Date(System.currentTimeMillis() + expiration)); // when it expires
+        if (userId != null) {
+            builder.claim("userId", userId);
+        }
+        return builder
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)      // sign it
                 .compact();
     }
 
     public String extractEmail(String token) {
         return extractAllClaims(token).getSubject();
+    }
+
+    // The persistent user id, or null for legacy tokens minted before the claim existed.
+    public Long extractUserId(String token) {
+        Object userId = extractAllClaims(token).get("userId");
+        return userId == null ? null : ((Number) userId).longValue();
     }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
