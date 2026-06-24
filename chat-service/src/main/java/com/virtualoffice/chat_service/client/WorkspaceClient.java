@@ -1,0 +1,39 @@
+/*
+ * Copyright (c) 2025 My Virtual Office
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ */
+package com.virtualoffice.chat_service.client;
+
+import java.util.Optional;
+
+/**
+ * Abstraction over workspace-service's internal API (INTEGRATION.md §5.2). chat-service does not
+ * store workspace roles; it asks workspace-service on demand so role changes are immediately
+ * consistent. All calls authenticate with the shared {@code X-Internal-Token}.
+ */
+public interface WorkspaceClient {
+
+    /**
+     * Resolves a user's workspace role, or empty if they have no active desk there (404).
+     */
+    Optional<WorkspaceMemberRole> getMemberRole(int workspaceId, int userId);
+
+    /**
+     * Enforces that {@code userId} is an active member of {@code workspaceId} holding at least
+     * {@code minRole}. Throws 403 otherwise (no active desk, insufficient role).
+     */
+    void requireRole(int workspaceId, int userId, WorkspaceRole minRole);
+}

@@ -17,6 +17,7 @@
  */
 package com.virtualoffice.chat_service.messaging;
 
+import com.virtualoffice.chat_service.AbstractChatIntegrationTest;
 import com.virtualoffice.chat_service.model.Channel;
 import com.virtualoffice.chat_service.model.ChannelType;
 import com.virtualoffice.chat_service.repository.ChannelRepository;
@@ -28,13 +29,6 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.MongoDBContainer;
-import org.testcontainers.containers.RabbitMQContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import java.nio.charset.StandardCharsets;
 import java.util.function.BooleanSupplier;
@@ -43,34 +37,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * End-to-end contract test for the workspace-service → chat-service channel-provisioning path
- * (INTEGRATION.md §5.1) over a <em>real</em> RabbitMQ broker and MongoDB (Testcontainers).
+ * (INTEGRATION.md §5.1) over a <em>real</em> RabbitMQ broker and MongoDB (Testcontainers, via
+ * {@link AbstractChatIntegrationTest}).
  *
  * <p>It publishes the exact JSON bytes workspace-service emits (no {@code __TypeId__} header,
  * {@code application/json} content type) onto {@code workspace.exchange} and asserts the live
  * {@link WorkspaceChannelListener} materialises and syncs the canonical channel in Mongo. This
  * proves the wire contract, the queue/exchange binding, and the listener effects together.
- *
- * <p>{@code @ServiceConnection} wires each container's connection into the context, so the app's
- * Mongo/RabbitMQ/Redis auto-configuration points at the containers rather than localhost.
  */
 @SpringBootTest
-@Testcontainers
-class WorkspaceChannelEventIntegrationTest {
-
-    @Container
-    @ServiceConnection
-    static final MongoDBContainer MONGO = new MongoDBContainer(DockerImageName.parse("mongo:7"));
-
-    @Container
-    @ServiceConnection
-    static final RabbitMQContainer RABBIT =
-            new RabbitMQContainer(DockerImageName.parse("rabbitmq:3-management-alpine"));
-
-    @Container
-    @ServiceConnection(name = "redis")
-    @SuppressWarnings("resource")
-    static final GenericContainer<?> REDIS =
-            new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
+class WorkspaceChannelEventIntegrationTest extends AbstractChatIntegrationTest {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;

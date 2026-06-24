@@ -17,6 +17,8 @@
  */
 package com.virtualoffice.chat_service.service.impl;
 
+import com.virtualoffice.chat_service.client.WorkspaceClient;
+import com.virtualoffice.chat_service.client.WorkspaceRole;
 import com.virtualoffice.chat_service.dto.mapper.DtoMapper;
 import com.virtualoffice.chat_service.dto.request.CreateChannelRequest;
 import com.virtualoffice.chat_service.dto.response.ChannelResponse;
@@ -47,12 +49,17 @@ import java.util.Optional;
 public class ChannelServiceImpl implements ChannelService {
 
     private final ChannelRepository channelRepository;
+    private final WorkspaceClient workspaceClient;
 
     @Override
     public ChannelResponse createGroupChannel(CreateChannelRequest request, Integer creatorUserId) {
         if (request.getWorkspaceId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId is required for group channels");
         }
+
+        // Workspace-scoped authorization (Design.md §chat-service): creating a channel requires at
+        // least MEMBER in the target workspace. Role lives in workspace-service, queried on demand.
+        workspaceClient.requireRole(request.getWorkspaceId(), creatorUserId, WorkspaceRole.MEMBER);
 
         LinkedHashSet<Integer> memberSet = new LinkedHashSet<>(request.getMembers());
         memberSet.removeIf(Objects::isNull);
