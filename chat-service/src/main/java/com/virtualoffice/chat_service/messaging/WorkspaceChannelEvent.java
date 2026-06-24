@@ -15,51 +15,31 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
  */
-package com.virtualoffice.chat_service.model;
+package com.virtualoffice.chat_service.messaging;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.bson.types.ObjectId;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.Instant;
 import java.util.List;
 
-// dmKey uniqueness lives in MongoConfig — sparse: true would still index the explicit `null`
-// that Spring writes for GROUP channels, so a partialFilterExpression is the only correct option
+/**
+ * Consumer-side mirror of workspace-service's {@code WorkspaceChannelEvent} wire contract
+ * (INTEGRATION.md §5.1). Field names and enum constants must match the producer; the producer
+ * sends {@code Long} ids which deserialize into {@code Integer} here (the chat-service id type).
+ * {@code members} is populated only on CREATE; {@code userId} carries the add/remove subject.
+ */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "channels")
-public class Channel {
+public class WorkspaceChannelEvent {
 
-    @Id
-    private ObjectId id;
-
-    private String name;
-
-    private ChannelType type;
-
+    private String eventId;
+    private WorkspaceChannelEventType type;
     private Integer workspaceId;
-
-    @Indexed
+    private String name;
+    private Integer userId;
     private List<Integer> members;
-
-    private String dmKey;
-
-    // True for the single canonical per-workspace channel provisioned from workspace.channel.event.
-    // Lets the workspace channel be resolved by (workspaceId, canonical) instead of by name. Null/false
-    // for user-created GROUP channels, DMs, and ROOM channels.
-    private Boolean canonical;
-
-    private Integer createdBy;
-
-    private Instant createdAt;
-
-    private Instant updatedAt;
 }

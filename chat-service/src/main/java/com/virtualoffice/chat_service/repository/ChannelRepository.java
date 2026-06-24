@@ -42,6 +42,9 @@ public interface ChannelRepository extends MongoRepository<Channel, ObjectId> {
     @Query("{ 'dmKey': ?0 }")
     Optional<Channel> findByDmKey(String dmKey);
 
+    @Query("{ 'workspaceId': ?0, 'canonical': true }")
+    Optional<Channel> findCanonicalByWorkspaceId(Integer workspaceId);
+
     @Query("{ 'type': ?0, 'members': ?1 }")
     Page<Channel> findDirectChannelsForUser(ChannelType type, Integer userId, Pageable pageable);
 

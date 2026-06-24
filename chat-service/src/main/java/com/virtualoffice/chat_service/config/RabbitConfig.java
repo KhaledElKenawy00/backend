@@ -39,6 +39,15 @@ public class RabbitConfig {
     @Value("${room.channel.routing-key}")
     private String roomChannelRoutingKey;
 
+    @Value("${workspace.channel.queue}")
+    private String workspaceChannelQueue;
+
+    @Value("${workspace.exchange}")
+    private String workspaceExchange;
+
+    @Value("${workspace.channel.routing-key}")
+    private String workspaceChannelRoutingKey;
+
     @Bean
     public Queue roomChannelQueue() {
         return QueueBuilder.durable(roomChannelQueue).build();
@@ -52,6 +61,21 @@ public class RabbitConfig {
     @Bean
     public Binding roomChannelBinding() {
         return BindingBuilder.bind(roomChannelQueue()).to(roomExchange()).with(roomChannelRoutingKey);
+    }
+
+    @Bean
+    public Queue workspaceChannelQueue() {
+        return QueueBuilder.durable(workspaceChannelQueue).build();
+    }
+
+    @Bean
+    public DirectExchange workspaceExchange() {
+        return new DirectExchange(workspaceExchange);
+    }
+
+    @Bean
+    public Binding workspaceChannelBinding() {
+        return BindingBuilder.bind(workspaceChannelQueue()).to(workspaceExchange()).with(workspaceChannelRoutingKey);
     }
 
     @Bean
