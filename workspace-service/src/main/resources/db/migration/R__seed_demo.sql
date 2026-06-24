@@ -59,10 +59,16 @@ $$
         VALUES (ws_id, 'Engineering', 'Demo team')
         RETURNING id INTO team_id;
 
-        -- The demo user's active OWNER desk (drives spawn, avatar, and name in SkyOffice).
+        -- Three active members so the office isn't empty: user 1 (the demo login) plus two
+        -- teammates. Their userIds line up with the chat-channel members and room seeded in the
+        -- other services. user 1 is the OWNER whose desk drives spawn/avatar/name in SkyOffice.
         INSERT INTO desk (user_id, workspace_id, full_name, avatar_character, timezone, status,
                           position_x, position_y, role, team_id, invite_status, is_active, joined_at)
         VALUES (1, ws_id, 'Demo User', 'ADAM', 'UTC', 'ACTIVE', 400, 300, 'OWNER', team_id,
+                'ACCEPTED', TRUE, now()),
+               (2, ws_id, 'Ash Rivera', 'ASH', 'UTC', 'ACTIVE', 200, 360, 'MEMBER', team_id,
+                'ACCEPTED', TRUE, now()),
+               (3, ws_id, 'Lucy Park', 'LUCY', 'UTC', 'ACTIVE', 560, 360, 'MEMBER', team_id,
                 'ACCEPTED', TRUE, now());
 
         -- Interactive objects (stable roomIds drive whiteboard/computer rejoin).
