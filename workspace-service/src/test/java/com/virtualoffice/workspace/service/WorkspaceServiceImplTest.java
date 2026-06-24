@@ -23,6 +23,7 @@ import com.virtualoffice.workspace.dto.request.UpdateWorkspaceRequest;
 import com.virtualoffice.workspace.dto.response.WorkspaceResponse;
 import com.virtualoffice.workspace.exception.ConflictException;
 import com.virtualoffice.workspace.exception.ForbiddenException;
+import com.virtualoffice.workspace.messaging.WorkspaceChannelEventPublisher;
 import com.virtualoffice.workspace.model.Desk;
 import com.virtualoffice.workspace.model.Workspace;
 import com.virtualoffice.workspace.model.enums.InviteStatus;
@@ -51,6 +52,7 @@ class WorkspaceServiceImplTest {
     private WorkspaceRepository workspaceRepository;
     private DeskRepository deskRepository;
     private WorkspaceAccessGuard accessGuard;
+    private WorkspaceChannelEventPublisher channelEvents;
     private WorkspaceServiceImpl service;
 
     @BeforeEach
@@ -58,7 +60,9 @@ class WorkspaceServiceImplTest {
         workspaceRepository = mock(WorkspaceRepository.class);
         deskRepository = mock(DeskRepository.class);
         accessGuard = mock(WorkspaceAccessGuard.class);
-        service = new WorkspaceServiceImpl(workspaceRepository, deskRepository, accessGuard, new WorkspaceMapperImpl());
+        channelEvents = mock(WorkspaceChannelEventPublisher.class);
+        service = new WorkspaceServiceImpl(workspaceRepository, deskRepository, accessGuard,
+                new WorkspaceMapperImpl(), channelEvents);
     }
 
     private CreateWorkspaceRequest createRequest() {
@@ -88,6 +92,9 @@ class WorkspaceServiceImplTest {
         assertThat(desk.getValue().getInviteStatus()).isEqualTo(InviteStatus.ACCEPTED);
         assertThat(desk.getValue().getUserId()).isEqualTo(42L);
         assertThat(desk.getValue().isActive()).isTrue();
+
+        // chat-service provisions the canonical workspace channel off this event.
+        verify(channelEvents).channelCreated(1L, "Acme", 42L);
     }
 
     @Test

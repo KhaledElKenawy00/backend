@@ -20,6 +20,7 @@ package com.virtualoffice.workspace.service.impl;
 import com.virtualoffice.workspace.dto.mapper.InvitationMapper;
 import com.virtualoffice.workspace.dto.request.InviteMemberRequest;
 import com.virtualoffice.workspace.dto.response.InvitationResponse;
+import com.virtualoffice.workspace.messaging.WorkspaceChannelEventPublisher;
 import com.virtualoffice.workspace.exception.ConflictException;
 import com.virtualoffice.workspace.exception.GoneException;
 import com.virtualoffice.workspace.exception.ResourceNotFoundException;
@@ -51,15 +52,18 @@ public class InvitationServiceImpl implements InvitationService {
     private final DeskRepository deskRepository;
     private final WorkspaceAccessGuard accessGuard;
     private final InvitationMapper mapper;
+    private final WorkspaceChannelEventPublisher channelEvents;
 
     public InvitationServiceImpl(InvitationRepository invitationRepository,
                                  DeskRepository deskRepository,
                                  WorkspaceAccessGuard accessGuard,
-                                 InvitationMapper mapper) {
+                                 InvitationMapper mapper,
+                                 WorkspaceChannelEventPublisher channelEvents) {
         this.invitationRepository = invitationRepository;
         this.deskRepository = deskRepository;
         this.accessGuard = accessGuard;
         this.mapper = mapper;
+        this.channelEvents = channelEvents;
     }
 
     @Override
@@ -119,6 +123,8 @@ public class InvitationServiceImpl implements InvitationService {
 
         activateMembership(invitation, acceptingUserId);
         invitation.setStatus(InviteStatus.ACCEPTED);
+        // Add the new member to the workspace chat channel (chat-service, post-commit).
+        channelEvents.memberAdded(invitation.getWorkspaceId(), acceptingUserId);
         return mapper.toResponse(invitationRepository.save(invitation));
     }
 

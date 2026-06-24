@@ -24,6 +24,7 @@ import com.virtualoffice.workspace.dto.response.DeskResponse;
 import com.virtualoffice.workspace.exception.ConflictException;
 import com.virtualoffice.workspace.exception.ForbiddenException;
 import com.virtualoffice.workspace.exception.ResourceNotFoundException;
+import com.virtualoffice.workspace.messaging.WorkspaceChannelEventPublisher;
 import com.virtualoffice.workspace.model.Desk;
 import com.virtualoffice.workspace.model.enums.DeskStatus;
 import com.virtualoffice.workspace.model.enums.WorkspaceRole;
@@ -50,6 +51,7 @@ class DeskServiceImplTest {
     private DeskLinkRepository deskLinkRepository;
     private DeskWidgetRepository deskWidgetRepository;
     private WorkspaceAccessGuard accessGuard;
+    private WorkspaceChannelEventPublisher channelEvents;
     private DeskServiceImpl service;
 
     @BeforeEach
@@ -58,8 +60,9 @@ class DeskServiceImplTest {
         deskLinkRepository = mock(DeskLinkRepository.class);
         deskWidgetRepository = mock(DeskWidgetRepository.class);
         accessGuard = mock(WorkspaceAccessGuard.class);
+        channelEvents = mock(WorkspaceChannelEventPublisher.class);
         service = new DeskServiceImpl(deskRepository, deskLinkRepository, deskWidgetRepository,
-                accessGuard, new DeskMapperImpl());
+                accessGuard, new DeskMapperImpl(), channelEvents);
         when(deskLinkRepository.findByDeskId(anyLong())).thenReturn(List.of());
         when(deskWidgetRepository.findByDeskIdOrderByPositionAsc(anyLong())).thenReturn(List.of());
     }
@@ -149,6 +152,7 @@ class DeskServiceImplTest {
         assertThat(member.isActive()).isFalse();
         verify(accessGuard).requireRole(1L, 1L, WorkspaceRole.ADMIN);
         verify(deskRepository).save(member);
+        verify(channelEvents).memberRemoved(1L, 5L);
     }
 
     @Test

@@ -20,6 +20,7 @@ package com.virtualoffice.workspace.service.impl;
 import com.virtualoffice.workspace.dto.mapper.DeskMapper;
 import com.virtualoffice.workspace.dto.request.UpdateDeskRequest;
 import com.virtualoffice.workspace.dto.request.UpdateStatusRequest;
+import com.virtualoffice.workspace.messaging.WorkspaceChannelEventPublisher;
 import com.virtualoffice.workspace.dto.response.DeskResponse;
 import com.virtualoffice.workspace.exception.ConflictException;
 import com.virtualoffice.workspace.exception.ForbiddenException;
@@ -49,17 +50,20 @@ public class DeskServiceImpl implements DeskService {
     private final DeskWidgetRepository deskWidgetRepository;
     private final WorkspaceAccessGuard accessGuard;
     private final DeskMapper mapper;
+    private final WorkspaceChannelEventPublisher channelEvents;
 
     public DeskServiceImpl(DeskRepository deskRepository,
                            DeskLinkRepository deskLinkRepository,
                            DeskWidgetRepository deskWidgetRepository,
                            WorkspaceAccessGuard accessGuard,
-                           DeskMapper mapper) {
+                           DeskMapper mapper,
+                           WorkspaceChannelEventPublisher channelEvents) {
         this.deskRepository = deskRepository;
         this.deskLinkRepository = deskLinkRepository;
         this.deskWidgetRepository = deskWidgetRepository;
         this.accessGuard = accessGuard;
         this.mapper = mapper;
+        this.channelEvents = channelEvents;
     }
 
     @Override
@@ -120,6 +124,8 @@ public class DeskServiceImpl implements DeskService {
         }
         desk.setActive(false);
         deskRepository.save(desk);
+        // Drop the removed member from the workspace chat channel (chat-service, post-commit).
+        channelEvents.memberRemoved(workspaceId, desk.getUserId());
     }
 
     // --- helpers ---

@@ -23,6 +23,7 @@ import com.virtualoffice.workspace.dto.response.InvitationResponse;
 import com.virtualoffice.workspace.exception.ConflictException;
 import com.virtualoffice.workspace.exception.GoneException;
 import com.virtualoffice.workspace.exception.ResourceNotFoundException;
+import com.virtualoffice.workspace.messaging.WorkspaceChannelEventPublisher;
 import com.virtualoffice.workspace.model.Desk;
 import com.virtualoffice.workspace.model.WorkspaceInvitation;
 import com.virtualoffice.workspace.model.enums.InviteStatus;
@@ -51,6 +52,7 @@ class InvitationServiceImplTest {
     private InvitationRepository invitationRepository;
     private DeskRepository deskRepository;
     private WorkspaceAccessGuard accessGuard;
+    private WorkspaceChannelEventPublisher channelEvents;
     private InvitationServiceImpl service;
 
     @BeforeEach
@@ -58,7 +60,9 @@ class InvitationServiceImplTest {
         invitationRepository = mock(InvitationRepository.class);
         deskRepository = mock(DeskRepository.class);
         accessGuard = mock(WorkspaceAccessGuard.class);
-        service = new InvitationServiceImpl(invitationRepository, deskRepository, accessGuard, new InvitationMapperImpl());
+        channelEvents = mock(WorkspaceChannelEventPublisher.class);
+        service = new InvitationServiceImpl(invitationRepository, deskRepository, accessGuard,
+                new InvitationMapperImpl(), channelEvents);
     }
 
     private WorkspaceInvitation invitation(InviteStatus status, Instant expiresAt) {
@@ -108,6 +112,7 @@ class InvitationServiceImplTest {
 
         assertThat(r.status()).isEqualTo(InviteStatus.ACCEPTED);
         verify(deskRepository).save(any(Desk.class));
+        verify(channelEvents).memberAdded(1L, 77L);
     }
 
     @Test

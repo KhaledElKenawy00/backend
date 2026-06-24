@@ -20,6 +20,11 @@ spring:
     enabled: true
     file: compose.yml
     lifecycle-management: start_only
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
 management:
   endpoints:
@@ -38,3 +43,8 @@ springdoc:
 workspace:
   internal:
     token: ${INTERNAL_API_TOKEN:dev-internal-token}
+  # Outbound chat-channel events consumed by chat-service (INTEGRATION.md §5.1).
+  events:
+    exchange: ${WORKSPACE_EXCHANGE:workspace.exchange}
+    channel:
+      routing-key: ${WORKSPACE_CHANNEL_ROUTING_KEY:workspace.channel.event}

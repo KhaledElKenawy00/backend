@@ -24,6 +24,7 @@ import com.virtualoffice.workspace.dto.response.WorkspaceResponse;
 import com.virtualoffice.workspace.exception.ConflictException;
 import com.virtualoffice.workspace.exception.ForbiddenException;
 import com.virtualoffice.workspace.exception.ResourceNotFoundException;
+import com.virtualoffice.workspace.messaging.WorkspaceChannelEventPublisher;
 import com.virtualoffice.workspace.model.Desk;
 import com.virtualoffice.workspace.model.Workspace;
 import com.virtualoffice.workspace.model.enums.AvatarCharacter;
@@ -56,15 +57,18 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private final DeskRepository deskRepository;
     private final WorkspaceAccessGuard accessGuard;
     private final WorkspaceMapper mapper;
+    private final WorkspaceChannelEventPublisher channelEvents;
 
     public WorkspaceServiceImpl(WorkspaceRepository workspaceRepository,
                                 DeskRepository deskRepository,
                                 WorkspaceAccessGuard accessGuard,
-                                WorkspaceMapper mapper) {
+                                WorkspaceMapper mapper,
+                                WorkspaceChannelEventPublisher channelEvents) {
         this.workspaceRepository = workspaceRepository;
         this.deskRepository = deskRepository;
         this.accessGuard = accessGuard;
         this.mapper = mapper;
+        this.channelEvents = channelEvents;
     }
 
     @Override
@@ -103,6 +107,9 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .timezone(request.defaultTimezone())
                 .joinedAt(Instant.now())
                 .build());
+
+        // chat-service provisions the canonical workspace channel off this event (fired post-commit).
+        channelEvents.channelCreated(workspace.getId(), workspace.getName(), ownerId);
 
         return mapper.toResponse(workspace);
     }
