@@ -17,6 +17,8 @@
  */
 package com.virtualoffice.room_service.service.impl;
 
+import com.virtualoffice.room_service.client.WorkspaceClient;
+import com.virtualoffice.room_service.client.WorkspaceRole;
 import com.virtualoffice.room_service.dto.request.CreateRoomRequest;
 import com.virtualoffice.room_service.dto.request.UpdateRoomRequest;
 import com.virtualoffice.room_service.dto.response.PaginatedResponse;
@@ -60,6 +62,9 @@ class RoomServiceImplTest {
 
     @Mock
     private RoomChannelEventPublisher publisher;
+
+    @Mock
+    private WorkspaceClient workspaceClient;
 
     @InjectMocks
     private RoomServiceImpl roomService;
@@ -106,6 +111,22 @@ class RoomServiceImplTest {
 
             verify(roomRepository).save(any(Room.class));
             verify(publisher).publishCreate(eq(response.getChannelId()), eq(1), eq("Standup"), anyList());
+            // creating a room requires active membership in the workspace
+            verify(workspaceClient).requireRole(1, 10, WorkspaceRole.MEMBER);
+        }
+
+        @Test
+        void shouldRejectCreationWhenNotAuthorizedInWorkspace() {
+            CreateRoomRequest request = CreateRoomRequest.builder()
+                    .name("Standup").workspaceId(1).members(List.of(20)).build();
+            doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "not a member"))
+                    .when(workspaceClient).requireRole(1, 99, WorkspaceRole.MEMBER);
+
+            assertThatThrownBy(() -> roomService.createRoom(request, 99))
+                    .isInstanceOf(ResponseStatusException.class);
+
+            verify(roomRepository, never()).save(any());
+            verify(publisher, never()).publishCreate(any(), any(), any(), any());
         }
 
         @Test
