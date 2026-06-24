@@ -10,3 +10,8 @@ spring:
 workspace:
   internal:
     token: test-internal-token
+  # Required by the chat-channel event publisher; no broker is needed (publishing is best-effort).
+  events:
+    exchange: workspace.exchange
+    channel:
+      routing-key: workspace.channel.event
