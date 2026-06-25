@@ -43,6 +43,16 @@ wait_http() { # name url
   note "$name did not become healthy — see $LOGS/$name.log"; return 1
 }
 
+wait_responding() { # name url — up as soon as it returns ANY HTTP status (the gateway has no
+  local name="$1" url="$2" i code   # actuator; a protected route answers 401, which still means up)
+  for i in $(seq 1 60); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)"
+    if [[ "$code" != "000" && -n "$code" ]]; then log "$name is up (HTTP $code)"; return 0; fi
+    sleep 2
+  done
+  note "$name did not start — see $LOGS/$name.log"; return 1
+}
+
 start_jar() { # name extra-env...
   local name="$1"; shift
   local jar
@@ -74,7 +84,7 @@ start_jar gateway-api
 wait_http workspace-service http://localhost:8087/api/workspace/health
 wait_http chat-service      http://localhost:8084/api/chat/health
 wait_http room-service      http://localhost:8086/api/rooms/health
-wait_http gateway-api       http://localhost:8080/actuator/health
+wait_responding gateway-api http://localhost:8080/api/workspace/1/layout
 
 # ── 4. Mint the demo JWT + resolve the seeded workspace id ──────────────────────────────────────
 TOKEN="$(node "$DEV/mint-jwt.mjs")"
