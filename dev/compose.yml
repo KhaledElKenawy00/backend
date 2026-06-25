@@ -26,11 +26,15 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: rootpassword
     ports:
       - "27017:27017"
+    # Authenticate in the healthcheck: the unauthenticated `ping` passes during Mongo's init window
+    # (before the root user exists and auth is enforced), letting `--wait` release the services too
+    # early. Requiring auth here means "healthy" only once the auth-enabled instance is truly up.
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "-u", "root", "-p", "rootpassword", "--authenticationDatabase", "admin", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 3s
       timeout: 5s
-      retries: 20
+      retries: 30
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
