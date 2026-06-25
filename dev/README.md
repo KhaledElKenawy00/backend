@@ -10,7 +10,9 @@ cd backend/dev
 ./stop.sh       # stop everything (host processes + infra)
 ```
 
-Open the printed URL (e.g. `http://localhost:5173/?token=…&workspaceId=1`).
+It prints **two** URLs — one for user 1 and one for user 2, both in workspace 1. Open each in a
+separate browser window (two profiles, or one normal + one incognito) to drive two avatars: walk
+them together to test proximity voice, and use the chat panel to message between them.
 
 ## What it starts
 - **Infra** (`compose.yml`): PostgreSQL, MongoDB, Redis, RabbitMQ.
@@ -20,13 +22,19 @@ Open the printed URL (e.g. `http://localhost:5173/?token=…&workspaceId=1`).
 user-service / MySQL are **not** required for the office demo — the JWT is minted directly
 (`mint-jwt.mjs`) and validated by the gateway with the shared secret. Add them later for real login.
 
-## Demo data (workspace 1, users 1–3) — synced across services
-- **workspace-service** (Flyway `R__seed_demo.sql`): "Demo Office", a 25×18 tile map, a meeting-room
-  zone + open floor, 3 active desks — user 1 *Demo User/ADAM* (OWNER, the login), user 2 *Ash/ASH*,
-  user 3 *Lucy/LUCY* — and 2 computers + 1 whiteboard.
-- **chat-service** (`DemoSeeder`, `demo.seed=true`): the canonical `general` channel for workspace 1
-  with members 1–3 and a few seeded messages.
-- **room-service** (`DemoSeeder`, `demo.seed=true`): a `Lounge` voice room in workspace 1.
+## Demo data (two workspaces, five users each) — synced across services
+Two workspaces are seeded with matching members across every service:
+- **workspace 1** `demo` (id 1): users **1..5** — *Demo User/ADAM* (OWNER, login), Ash/ASH, Lucy/LUCY,
+  Nancy/NANCY, Sam/ADAM.
+- **workspace 2** `demo2` (id 2): users **6..10** — a second office, for workspace-isolation testing.
+
+Each workspace gets, per service:
+- **workspace-service** (Flyway `R__seed_demo.sql`): a 25×18 tile map, a meeting-room zone + open
+  floor, 5 active desks spread near the spawn (so two users land in one proximity voice group), and
+  2 computers + 1 whiteboard.
+- **chat-service** (`DemoSeeder`, `demo.seed=true`): the canonical `general` channel with all five
+  members and a few seeded messages.
+- **room-service** (`DemoSeeder`, `demo.seed=true`): a `Lounge` voice room with all five members.
 
 All seeders are idempotent. workspace-service seeds on every boot (Flyway); chat/room seed only when
 `demo.seed=true`, which `run.sh` sets.

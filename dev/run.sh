@@ -86,8 +86,11 @@ wait_http chat-service      http://localhost:8084/api/chat/health
 wait_http room-service      http://localhost:8086/api/rooms/health
 wait_responding gateway-api http://localhost:8080/api/workspace/1/layout
 
-# ── 4. Mint the demo JWT + resolve the seeded workspace id ──────────────────────────────────────
-TOKEN="$(node "$DEV/mint-jwt.mjs")"
+# ── 4. Mint two demo JWTs + resolve the seeded workspace id ──────────────────────────────────────
+# Two users so you can open the same office in two browsers and try chat + proximity voice between
+# them. Both are seeded members of workspace 'demo' (users 1..5); we use user 1 and user 2.
+TOKEN1="$(DEMO_USER_ID=1 DEMO_EMAIL=demo@office.dev   node "$DEV/mint-jwt.mjs")"
+TOKEN2="$(DEMO_USER_ID=2 DEMO_EMAIL=ash@office.dev     node "$DEV/mint-jwt.mjs")"
 WID="$(docker compose -f "$DEV/compose.yml" exec -T postgres \
         psql -U workspace -d workspace -tAc "select id from workspace where slug='demo'" \
         2>/dev/null | tr -d '[:space:]')"
@@ -106,8 +109,14 @@ log "starting SkyOffice client (vite)…"
     yarn --silent dev --port "$CLIENT_PORT" --strictPort >"$LOGS/client.log" 2>&1 & echo $! >>"$PIDFILE" )
 wait_http client "http://localhost:$CLIENT_PORT" || true
 
-URL="http://localhost:$CLIENT_PORT/?token=$TOKEN&workspaceId=$WID"
+URL1="http://localhost:$CLIENT_PORT/?token=$TOKEN1&workspaceId=$WID"
+URL2="http://localhost:$CLIENT_PORT/?token=$TOKEN2&workspaceId=$WID"
 printf '\n\033[1;32m========================================================================\033[0m\n'
-printf '  Virtual Office demo is up. Open the office (workspace %s):\n\n  %s\n' "$WID" "$URL"
-printf '\n  Logs: %s   ·   Stop: %s/stop.sh\n' "$LOGS" "$DEV"
+printf '  Virtual Office demo is up. Open BOTH urls (workspace %s) in two browser windows\n' "$WID"
+printf '  (use two profiles or one normal + one incognito), then walk the avatars together to\n'
+printf '  test proximity voice, and use the chat panel to message each other:\n\n'
+printf '  User 1 (Demo User): %s\n\n' "$URL1"
+printf '  User 2 (Ash Rivera): %s\n' "$URL2"
+printf '\n  A second office (workspace 2, users 6..10) is also seeded for isolation testing.\n'
+printf '  Logs: %s   ·   Stop: %s/stop.sh\n' "$LOGS" "$DEV"
 printf '\033[1;32m========================================================================\033[0m\n'
