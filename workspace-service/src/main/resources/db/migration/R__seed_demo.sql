@@ -47,23 +47,29 @@ $$
                         'INVITE_ONLY', gen_random_uuid(), 'UTC', 32, cols, rows, 1)
                 RETURNING id INTO ws_id;
 
-                -- Tileset (the SkyOffice floor/ground sheet, resolved client-side).
+                -- Tileset (the SkyOffice floor/ground sheet, resolved client-side). FloorAndGround.png
+                -- is 2048x1280 at 32px tiles => 64 columns x 40 rows = 2560 tiles. These must match the
+                -- image or the gid->tile mapping is wrong and the floor renders as garbage.
                 INSERT INTO tileset (workspace_id, name, image_url, first_gid, tile_width, tile_height,
                                      columns, tile_count)
-                VALUES (ws_id, 'FloorAndGround', 'assets/map/FloorAndGround.png', 1, 32, 32, 8, 64);
+                VALUES (ws_id, 'FloorAndGround', 'assets/map/FloorAndGround.png', 1, 32, 32, 64, 2560);
 
-                -- Ground layer: every tile is the first floor tile (gid 1).
+                -- Ground layer: a solid floor tile across the whole map. gid 412 is the base floor
+                -- tile the stock SkyOffice map uses; gid 1 is a transparent edge tile (the cause of the
+                -- "clouds showing through" look).
                 INSERT INTO map_layer (workspace_id, name, layer_index, collides, data)
                 VALUES (ws_id, 'Ground', 0, FALSE,
-                        (SELECT jsonb_agg(1 ORDER BY i) FROM generate_series(0, cols * rows - 1) AS i));
+                        (SELECT jsonb_agg(412 ORDER BY i) FROM generate_series(0, cols * rows - 1) AS i));
 
-                -- Walls layer: a collidable border (gid 2) around the edge, empty (0) inside.
+                -- Walls layer: a collidable border around the edge so avatars can't walk off the floor.
+                -- The border reuses the floor tile (gid 412) for a seamless look; collision comes from
+                -- the layer's collides flag, empty (0) inside.
                 INSERT INTO map_layer (workspace_id, name, layer_index, collides, data)
                 VALUES (ws_id, 'Walls', 1, TRUE,
                         (SELECT jsonb_agg(
                                         CASE
                                             WHEN (i / cols) = 0 OR (i / cols) = rows - 1
-                                                OR (i % cols) = 0 OR (i % cols) = cols - 1 THEN 2
+                                                OR (i % cols) = 0 OR (i % cols) = cols - 1 THEN 412
                                             ELSE 0
                                             END ORDER BY i)
                          FROM generate_series(0, cols * rows - 1) AS i));
