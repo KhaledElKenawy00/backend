@@ -52,6 +52,11 @@ public class Channel {
 
     private String dmKey;
 
+    // True for the single canonical per-workspace channel provisioned from workspace.channel.event.
+    // Lets the workspace channel be resolved by (workspaceId, canonical) instead of by name. Null/false
+    // for user-created GROUP channels, DMs, and ROOM channels.
+    private Boolean canonical;
+
     private Integer createdBy;
 
     private Instant createdAt;

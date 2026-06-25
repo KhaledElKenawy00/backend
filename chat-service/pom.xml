@@ -29,6 +29,9 @@
 	<properties>
 		<java.version>21</java.version>
 		<spring-cloud.version>2025.1.1</spring-cloud.version>
+		<testcontainers.version>1.21.3</testcontainers.version>
+		<docker-java.version>3.7.1</docker-java.version>
+		<testcontainers.docker-api.version>1.44</testcontainers.docker-api.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -117,13 +120,51 @@
 			<artifactId>junit-platform-suite-engine</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Cross-service integration tests: real RabbitMQ + MongoDB via Testcontainers. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>mongodb</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>rabbitmq</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
+			<!-- Declared before testcontainers-bom so this (newer) docker-java wins version
+			     arbitration; the client then negotiates a Docker API version >= 1.40, required
+			     by Docker Engine 29+. -->
+			<dependency>
+				<groupId>com.github.docker-java</groupId>
+				<artifactId>docker-java-bom</artifactId>
+				<version>${docker-java.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 			<dependency>
 				<groupId>org.springframework.cloud</groupId>
 				<artifactId>spring-cloud-dependencies</artifactId>
 				<version>${spring-cloud.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -151,6 +192,13 @@
 					<excludes>
 						<exclude>**/ChatServiceApplicationTests.java</exclude>
 					</excludes>
+					<!-- docker-java negotiates Docker API 1.32 by default, which Docker Engine 29+
+					     rejects (min 1.40). Pin a modern version (supported by Engine 25+) so the
+					     Testcontainers integration tests run out of the box. Override with
+					     -Dapi.version=<n> on an older daemon. -->
+					<systemPropertyVariables>
+						<api.version>${testcontainers.docker-api.version}</api.version>
+					</systemPropertyVariables>
 				</configuration>
 			</plugin>
 			<plugin>

@@ -41,7 +41,7 @@ public class OtpService {
                 .orElseThrow(() -> new RuntimeException("No user found with this email"));
 
         VerificationRequest request = verificationRequestRepository
-                .getOtpByUser_IdAndTypeAndStatus(
+                .getOtpByUserAndType(
                         user.getId(), type, VerificationRequestStatus.PENDING)
                 .orElse(null);
 

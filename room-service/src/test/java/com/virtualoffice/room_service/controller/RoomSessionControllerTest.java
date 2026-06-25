@@ -67,7 +67,7 @@ class RoomSessionControllerTest {
     @Test
     void joinShouldReturnAgoraChannelAndParticipantsAndBroadcast() {
         HttpServletRequest httpRequest = mockRequest("10", "USER");
-        when(roomService.getRoom("r1", 10)).thenReturn(room());
+        when(roomService.ensureMemberAndGet("r1", 10)).thenReturn(room());
         ParticipantResponse joined = ParticipantResponse.builder().userId(10).build();
         when(presenceService.join("r1", 10, 25)).thenReturn(joined);
         when(presenceService.listParticipants("r1")).thenReturn(List.of(joined));
@@ -82,7 +82,7 @@ class RoomSessionControllerTest {
     @Test
     void joinShouldNotBroadcastWhenAlreadyPresent() {
         HttpServletRequest httpRequest = mockRequest("10", "USER");
-        when(roomService.getRoom("r1", 10)).thenReturn(room());
+        when(roomService.ensureMemberAndGet("r1", 10)).thenReturn(room());
         when(presenceService.join("r1", 10, 25)).thenReturn(null);
         when(presenceService.listParticipants("r1")).thenReturn(List.of());
 

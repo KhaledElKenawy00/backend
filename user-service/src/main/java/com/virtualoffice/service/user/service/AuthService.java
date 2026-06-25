@@ -67,7 +67,7 @@ public class AuthService {
         userRepository.save(user);
 
         // Generate a JWT token for the new user
-        String token = jwtUtil.generateToken(user.getEmail());
+        String token = jwtUtil.generateToken(user.getEmail(), user.getId());
 
 
         // Send a notification to the user
@@ -93,7 +93,7 @@ public class AuthService {
             return AuthResponse.withError("User Not Found");
         }
 
-        String token = jwtUtil.generateToken(user.getEmail());
+        String token = jwtUtil.generateToken(user.getEmail(), user.getId());
 
         return new AuthResponse(token, user.getEmail(), user.getFirstName(), user.getLastName(), "None", user.getId());
     }

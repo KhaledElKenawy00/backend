@@ -19,7 +19,7 @@
         <module>calendar-service</module>
         <module>chat-service</module>
         <module>gateway-api</module>
-        <module>notification-service</module>
+        <module>notifications-service</module>
         <module>room-service</module>
         <module>shared-library</module>
         <module>tasks-service</module>

@@ -80,7 +80,7 @@ class AuthServiceTest {
             u.setId(5L);
             return u;
         });
-        when(jwtUtil.generateToken("user@example.com")).thenReturn("token-123");
+        when(jwtUtil.generateToken("user@example.com", 5L)).thenReturn("token-123");
 
         AuthResponse response = authService.register(registerRequest());
 
@@ -113,7 +113,7 @@ class AuthServiceTest {
         user.setEmail("user@example.com");
         user.setFirstName("Test");
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
-        when(jwtUtil.generateToken("user@example.com")).thenReturn("token-xyz");
+        when(jwtUtil.generateToken("user@example.com", 7L)).thenReturn("token-xyz");
 
         AuthResponse response = authService.login(req);
 

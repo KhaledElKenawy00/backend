@@ -17,6 +17,8 @@
  */
 package com.virtualoffice.chat_service.service.impl;
 
+import com.virtualoffice.chat_service.client.WorkspaceClient;
+import com.virtualoffice.chat_service.client.WorkspaceRole;
 import com.virtualoffice.chat_service.dto.request.CreateChannelRequest;
 import com.virtualoffice.chat_service.dto.response.ChannelResponse;
 import com.virtualoffice.chat_service.dto.response.PaginatedResponse;
@@ -33,6 +35,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -53,6 +56,9 @@ class ChannelServiceImplTest {
 
     @Mock
     private ChannelRepository channelRepository;
+
+    @Mock
+    private WorkspaceClient workspaceClient;
 
     @InjectMocks
     private ChannelServiceImpl channelService;
@@ -172,6 +178,35 @@ class ChannelServiceImplTest {
             assertThatThrownBy(() -> channelService.createGroupChannel(request, 10))
                     .isInstanceOf(ResponseStatusException.class)
                     .hasMessageContaining("workspaceId is required");
+        }
+
+        @Test
+        void shouldEnforceMemberRoleInWorkspace() {
+            CreateChannelRequest request = CreateChannelRequest.builder()
+                    .name("general").workspaceId(1).members(List.of(20)).build();
+            when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> {
+                Channel ch = inv.getArgument(0);
+                ch.setId(new ObjectId());
+                return ch;
+            });
+
+            channelService.createGroupChannel(request, 10);
+
+            // the workspace-scoped role check runs before any persistence
+            verify(workspaceClient).requireRole(1, 10, WorkspaceRole.MEMBER);
+        }
+
+        @Test
+        void shouldRejectCreationWhenNotAuthorizedInWorkspace() {
+            CreateChannelRequest request = CreateChannelRequest.builder()
+                    .name("general").workspaceId(1).members(List.of(20)).build();
+            doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "not a member"))
+                    .when(workspaceClient).requireRole(1, 99, WorkspaceRole.MEMBER);
+
+            assertThatThrownBy(() -> channelService.createGroupChannel(request, 99))
+                    .isInstanceOf(ResponseStatusException.class);
+
+            verify(channelRepository, never()).save(any());
         }
 
         @Test

@@ -36,6 +36,7 @@ public class WebSocketEvent<T> {
     public static final String STATE_CHANGED = "STATE_CHANGED";
     public static final String ROOM_UPDATED = "ROOM_UPDATED";
     public static final String ROOM_CLOSED = "ROOM_CLOSED";
+    public static final String VOICE_GROUP_CHANGED = "VOICE_GROUP_CHANGED";
 
     public static <T> WebSocketEvent<T> of(String action, T payload) {
         return WebSocketEvent.<T>builder()

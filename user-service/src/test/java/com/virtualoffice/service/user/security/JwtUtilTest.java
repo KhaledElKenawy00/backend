@@ -55,6 +55,21 @@ class JwtUtilTest {
     }
 
     @Test
+    void generatedTokenRoundTripsUserId() {
+        String token = jwtUtil.generateToken("user@example.com", 42L);
+
+        assertThat(jwtUtil.extractUserId(token)).isEqualTo(42L);
+        assertThat(jwtUtil.extractEmail(token)).isEqualTo("user@example.com");
+    }
+
+    @Test
+    void legacyTokenWithoutUserIdClaimYieldsNull() {
+        String token = jwtUtil.generateToken("user@example.com");
+
+        assertThat(jwtUtil.extractUserId(token)).isNull();
+    }
+
+    @Test
     void tokenIsValidForMatchingUser() {
         String token = jwtUtil.generateToken("user@example.com");
 

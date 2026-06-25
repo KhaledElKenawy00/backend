@@ -17,6 +17,8 @@
  */
 package com.virtualoffice.room_service.service.impl;
 
+import com.virtualoffice.room_service.client.WorkspaceClient;
+import com.virtualoffice.room_service.client.WorkspaceRole;
 import com.virtualoffice.room_service.dto.mapper.RoomMapper;
 import com.virtualoffice.room_service.dto.request.CreateRoomRequest;
 import com.virtualoffice.room_service.dto.request.UpdateRoomRequest;
@@ -54,12 +56,16 @@ public class RoomServiceImpl implements RoomService {
 
     private final RoomRepository roomRepository;
     private final RoomChannelEventPublisher publisher;
+    private final WorkspaceClient workspaceClient;
 
     @Value("${room.agora.channel-prefix}")
     private String agoraChannelPrefix;
 
     @Override
     public RoomResponse createRoom(CreateRoomRequest request, Integer creatorUserId) {
+        // Only an active member of the workspace may open a voice room in it (INTEGRATION.md §4.1).
+        workspaceClient.requireRole(request.getWorkspaceId(), creatorUserId, WorkspaceRole.MEMBER);
+
         ObjectId roomId = new ObjectId();
         String channelId = new ObjectId().toHexString();
         String agoraChannelName = agoraChannelPrefix + roomId.toHexString();
@@ -110,7 +116,10 @@ public class RoomServiceImpl implements RoomService {
     public PaginatedResponse<RoomResponse> getRooms(Integer workspaceId, Integer userId, int page, int limit) {
         PageRequest pageRequest = PageRequest.of(page - 1, limit, Sort.by(Sort.Direction.DESC, "updatedAt"));
 
-        Page<Room> roomPage = roomRepository.findByWorkspaceId(workspaceId, pageRequest);
+        // Listing is membership-filtered (backend.md): a caller only sees rooms they belong to,
+        // not every room in the workspace. Using the unfiltered findByWorkspaceId leaked private
+        // rooms to non-members.
+        Page<Room> roomPage = roomRepository.findByWorkspaceIdAndMember(workspaceId, userId, pageRequest);
 
         List<RoomResponse> rooms = roomPage.getContent()
                 .stream()
@@ -194,6 +203,9 @@ public class RoomServiceImpl implements RoomService {
     public RoomResponse ensureMemberAndGet(String roomId, Integer userId) {
         Room room = roomRepository.findById(new ObjectId(roomId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "room not found"));
+        // Joining a room (and being auto-added to it) requires an active desk in the room's
+        // workspace, so a removed member can no longer slip into its voice rooms (INTEGRATION.md §4.1).
+        workspaceClient.requireRole(room.getWorkspaceId(), userId, WorkspaceRole.MEMBER);
         if (room.getMembers() == null || !room.getMembers().contains(userId)) {
             roomRepository.addMember(room.getId(), userId, Instant.now());
             room = roomRepository.findById(new ObjectId(roomId))
