@@ -54,11 +54,12 @@ class ApiClient {
   }
 
   Future<Map<String, String>> workspaceServiceHeaders() async {
-    final token = await _authStorage.getToken();
-    final headers = {
-      'Authorization': 'Bearer ${token ?? ''}',
+    final userId = await _authStorage.getUserId();
+    final role = await _authStorage.getUserRole();
+    return {
+      'X-User-Id': userId ?? '',
+      'X-User-Role': role ?? 'USER',
       'Content-Type': 'application/json',
     };
-    return headers;
   }
 }

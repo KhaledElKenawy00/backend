@@ -44,6 +44,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'rooms_fab',
         onPressed: () async {
           final provider = context.read<RoomProvider>();
           final created = await Navigator.of(context).push<bool>(

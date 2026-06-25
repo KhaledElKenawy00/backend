@@ -36,6 +36,7 @@ class _WorkspaceListScreenState extends State<WorkspaceListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'workspace_list_fab',
         onPressed: () => _showCreateDialog(context),
         icon: const Icon(Icons.add),
         label: const Text('New Workspace'),

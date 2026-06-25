@@ -207,27 +207,34 @@ class _TeamsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WorkspaceProvider>();
-    return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'teams_fab',
-        mini: true,
-        onPressed: () => _showCreateTeamDialog(context),
-        child: const Icon(Icons.add),
-      ),
-      body: provider.isLoading && provider.teams.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : provider.teams.isEmpty
-              ? const Center(child: Text('No teams yet.'))
-              : RefreshIndicator(
-                  onRefresh: () =>
-                      context.read<WorkspaceProvider>().fetchTeams(workspaceId),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(8),
-                    itemCount: provider.teams.length,
-                    itemBuilder: (ctx, i) =>
-                        _TeamTile(team: provider.teams[i], workspaceId: workspaceId),
-                  ),
+    final body = provider.isLoading && provider.teams.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : provider.teams.isEmpty
+            ? const Center(child: Text('No teams yet.'))
+            : RefreshIndicator(
+                onRefresh: () =>
+                    context.read<WorkspaceProvider>().fetchTeams(workspaceId),
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 80),
+                  itemCount: provider.teams.length,
+                  itemBuilder: (ctx, i) =>
+                      _TeamTile(team: provider.teams[i], workspaceId: workspaceId),
                 ),
+              );
+    return Stack(
+      children: [
+        body,
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            heroTag: 'teams_fab',
+            mini: true,
+            onPressed: () => _showCreateTeamDialog(context),
+            child: const Icon(Icons.add),
+          ),
+        ),
+      ],
     );
   }
 
@@ -388,29 +395,36 @@ class _InvitationsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WorkspaceProvider>();
-    return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'invitations_fab',
-        mini: true,
-        onPressed: () => _showInviteDialog(context),
-        child: const Icon(Icons.person_add),
-      ),
-      body: provider.isLoading && provider.invitations.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : provider.invitations.isEmpty
-              ? const Center(child: Text('No pending invitations.'))
-              : RefreshIndicator(
-                  onRefresh: () => context
-                      .read<WorkspaceProvider>()
-                      .fetchInvitations(workspaceId),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(8),
-                    itemCount: provider.invitations.length,
-                    itemBuilder: (ctx, i) => _InvitationTile(
-                        invitation: provider.invitations[i],
-                        workspaceId: workspaceId),
-                  ),
+    final body = provider.isLoading && provider.invitations.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : provider.invitations.isEmpty
+            ? const Center(child: Text('No pending invitations.'))
+            : RefreshIndicator(
+                onRefresh: () => context
+                    .read<WorkspaceProvider>()
+                    .fetchInvitations(workspaceId),
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 80),
+                  itemCount: provider.invitations.length,
+                  itemBuilder: (ctx, i) => _InvitationTile(
+                      invitation: provider.invitations[i],
+                      workspaceId: workspaceId),
                 ),
+              );
+    return Stack(
+      children: [
+        body,
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            heroTag: 'invitations_fab',
+            mini: true,
+            onPressed: () => _showInviteDialog(context),
+            child: const Icon(Icons.person_add),
+          ),
+        ),
+      ],
     );
   }
 
