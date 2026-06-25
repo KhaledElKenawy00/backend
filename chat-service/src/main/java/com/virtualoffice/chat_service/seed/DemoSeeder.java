@@ -35,10 +35,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Seeds demo chat for the seeded demo workspace (id 1), keyed to the same users as the
- * workspace-service desks (1, 2, 3). Enabled only with {@code demo.seed=true} (dev/run.sh sets it),
- * and idempotent — it does nothing if the canonical channel already exists. The demo workspace is
- * created via SQL, so its provisioning event never fires; this fills that gap for local testing.
+ * Seeds demo chat for the seeded demo workspaces, keyed to the same users as the workspace-service
+ * desks — workspace 1 has members 1..5, workspace 2 has members 6..10. Enabled only with
+ * {@code demo.seed=true} (dev/run.sh sets it), and idempotent per workspace — it skips any workspace
+ * whose canonical channel already exists. The demo workspaces are created via SQL, so their
+ * provisioning events never fire; this fills that gap for local testing.
  */
 @Slf4j
 @Component
@@ -46,34 +47,45 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DemoSeeder implements CommandLineRunner {
 
-    private static final int WORKSPACE_ID = 1;
+    /** Each demo workspace and its members, mirroring R__seed_demo.sql in workspace-service. */
+    private record DemoWorkspace(int workspaceId, List<Integer> members) {
+    }
+
+    private static final List<DemoWorkspace> WORKSPACES = List.of(
+            new DemoWorkspace(1, List.of(1, 2, 3, 4, 5)),
+            new DemoWorkspace(2, List.of(6, 7, 8, 9, 10)));
 
     private final ChannelRepository channelRepository;
     private final MessageRepository messageRepository;
 
     @Override
     public void run(String... args) {
-        if (channelRepository.findCanonicalByWorkspaceId(WORKSPACE_ID).isPresent()) {
+        WORKSPACES.forEach(this::seedWorkspace);
+    }
+
+    private void seedWorkspace(DemoWorkspace ws) {
+        if (channelRepository.findCanonicalByWorkspaceId(ws.workspaceId()).isPresent()) {
             return;
         }
 
         Instant now = Instant.now();
+        List<Integer> members = ws.members();
         Channel channel = channelRepository.save(Channel.builder()
                 .type(ChannelType.GROUP)
-                .workspaceId(WORKSPACE_ID)
+                .workspaceId(ws.workspaceId())
                 .name("general")
                 .canonical(true)
-                .members(new ArrayList<>(List.of(1, 2, 3)))
-                .createdBy(1)
+                .members(new ArrayList<>(members))
+                .createdBy(members.get(0))
                 .createdAt(now)
                 .updatedAt(now)
                 .build());
 
-        seedMessage(channel.getId(), 1, "Welcome to the demo office! 👋", now.minusSeconds(180));
-        seedMessage(channel.getId(), 2, "Morning! Grabbing coffee then standup.", now.minusSeconds(90));
-        seedMessage(channel.getId(), 3, "Heading to the meeting room now.", now.minusSeconds(20));
+        seedMessage(channel.getId(), members.get(0), "Welcome to the demo office! 👋", now.minusSeconds(180));
+        seedMessage(channel.getId(), members.get(1), "Morning! Grabbing coffee then standup.", now.minusSeconds(90));
+        seedMessage(channel.getId(), members.get(2), "Heading to the meeting room now.", now.minusSeconds(20));
 
-        log.info("seeded demo chat channel {} for workspace {}", channel.getId(), WORKSPACE_ID);
+        log.info("seeded demo chat channel {} for workspace {}", channel.getId(), ws.workspaceId());
     }
 
     private void seedMessage(ObjectId channelId, int senderId, String content, Instant at) {

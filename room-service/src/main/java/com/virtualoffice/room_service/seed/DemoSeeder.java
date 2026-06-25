@@ -32,9 +32,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Seeds a demo voice room for the seeded demo workspace (id 1), with members that line up with the
- * workspace-service desks. Enabled only with {@code demo.seed=true} (dev/run.sh sets it) and
- * idempotent — it does nothing if the workspace already has a room.
+ * Seeds a demo voice room per seeded demo workspace, with members that line up with the
+ * workspace-service desks — workspace 1 has members 1..5, workspace 2 has members 6..10. Enabled
+ * only with {@code demo.seed=true} (dev/run.sh sets it) and idempotent per workspace — it skips any
+ * workspace that already has a room.
  */
 @Slf4j
 @Component
@@ -42,13 +43,23 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DemoSeeder implements CommandLineRunner {
 
-    private static final int WORKSPACE_ID = 1;
+    /** Each demo workspace and its members, mirroring R__seed_demo.sql in workspace-service. */
+    private record DemoWorkspace(int workspaceId, List<Integer> members) {
+    }
+
+    private static final List<DemoWorkspace> WORKSPACES = List.of(
+            new DemoWorkspace(1, List.of(1, 2, 3, 4, 5)),
+            new DemoWorkspace(2, List.of(6, 7, 8, 9, 10)));
 
     private final RoomRepository roomRepository;
 
     @Override
     public void run(String... args) {
-        if (roomRepository.findByWorkspaceId(WORKSPACE_ID, PageRequest.of(0, 1)).hasContent()) {
+        WORKSPACES.forEach(this::seedWorkspace);
+    }
+
+    private void seedWorkspace(DemoWorkspace ws) {
+        if (roomRepository.findByWorkspaceId(ws.workspaceId(), PageRequest.of(0, 1)).hasContent()) {
             return;
         }
 
@@ -56,17 +67,17 @@ public class DemoSeeder implements CommandLineRunner {
         Instant now = Instant.now();
         roomRepository.save(Room.builder()
                 .id(roomId)
-                .workspaceId(WORKSPACE_ID)
+                .workspaceId(ws.workspaceId())
                 .name("Lounge")
                 .channelId(new ObjectId().toHexString())
                 .agoraChannelName("room-" + roomId.toHexString())
-                .members(new ArrayList<>(List.of(1, 2)))
+                .members(new ArrayList<>(ws.members()))
                 .maxParticipants(25)
-                .createdBy(1)
+                .createdBy(ws.members().get(0))
                 .createdAt(now)
                 .updatedAt(now)
                 .build());
 
-        log.info("seeded demo voice room {} for workspace {}", roomId.toHexString(), WORKSPACE_ID);
+        log.info("seeded demo voice room {} for workspace {}", roomId.toHexString(), ws.workspaceId());
     }
 }
