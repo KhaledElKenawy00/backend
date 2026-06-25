@@ -104,8 +104,11 @@ log "starting Colyseus server (SkyOffice fork)…"
     yarn --silent start >"$LOGS/colyseus.log" 2>&1 & echo $! >>"$PIDFILE" )
 
 log "starting SkyOffice client (vite)…"
+# Set VITE_AGORA_APP_ID to your own Agora app-id (in "App ID / testing" auth mode) for real voice
+# audio; the default placeholder is in token mode and fails to join with App-ID-only.
 ( cd "$SKYOFFICE/client" && \
     VITE_API_URL=http://localhost:8080 \
+    VITE_AGORA_APP_ID="${VITE_AGORA_APP_ID:-}" \
     yarn --silent dev --port "$CLIENT_PORT" --strictPort >"$LOGS/client.log" 2>&1 & echo $! >>"$PIDFILE" )
 wait_http client "http://localhost:$CLIENT_PORT" || true
 
