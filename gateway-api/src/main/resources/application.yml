@@ -32,6 +32,10 @@ gateway:
   # Path prefixes served without authentication (comma-separated). Any path ending in /health is
   # also public. Everything else requires a valid JWT.
   public-path-prefixes: /api/auth/,/api/otp/
+  cors:
+    # Browser origins allowed to call the API (comma-separated patterns). Defaults to any localhost
+    # port for local dev; set to the real web origin(s) in production.
+    allowed-origin-patterns: ${GATEWAY_CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*}
 
 management:
   endpoints:
