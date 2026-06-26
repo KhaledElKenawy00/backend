@@ -24,7 +24,11 @@ class _RoomsScreenState extends State<RoomsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RoomProvider>().loadRooms(_workspaceId);
+      if (!mounted) return;
+      final provider = context.read<RoomProvider>();
+      if (provider.rooms.isEmpty && !provider.isLoading) {
+        provider.loadRooms(_workspaceId);
+      }
     });
   }
 

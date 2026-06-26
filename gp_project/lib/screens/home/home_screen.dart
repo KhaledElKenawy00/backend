@@ -4,6 +4,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/workspace_provider.dart';
+import '../../providers/room_provider.dart';
 import '../chat/channels_screen.dart';
 import '../chat/dms_screen.dart';
 import '../notifications/notifications_screen.dart';
@@ -32,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final chatProvider = context.read<ChatProvider>();
     final notifProvider = context.read<NotificationProvider>();
     final workspaceProvider = context.read<WorkspaceProvider>();
+    final roomProvider = context.read<RoomProvider>();
 
     final role = await authProvider.authStorage.getUserRole() ?? 'USER';
     final userId = authProvider.currentUser?.id ?? 0;
@@ -47,6 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
       chatProvider.loadDms(),
       chatProvider.loadUserNames(),
       notifProvider.load(),
+      roomProvider.loadRooms(workspaceId),
     ]);
   }
 
