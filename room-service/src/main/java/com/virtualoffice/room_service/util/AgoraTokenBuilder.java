@@ -13,12 +13,21 @@ import java.util.Random;
 import java.util.zip.Deflater;
 
 /**
- * Agora AccessToken2 ("007") builder matching the official format:
- *   - HMAC key = SHA-256(appCertificate bytes)
- *   - HMAC input = raw-appId + issuedAt + expireAt + salt (no length prefix for signing)
- *   - Message = version(1) | packStr(appId) | issuedAt | expireAt | salt
- *               | serviceCount | serviceType | packBytes(servicePayload) | packBytes(signature)
- *   - Final = "007" + base64(zlib(message))
+ * Agora AccessToken2 ("007") builder — matches the official format exactly:
+ *
+ *   compressed = zlib( LP(sig) | LP(appId) | issuedTs | expireTs | salt
+ *                    | uint16(svcCount) | uint16(svcType) | LP(svcPayload) )
+ *
+ *   sig        = HMAC-SHA256( SHA256(appCert), body )
+ *   body       = LP(appId) | issuedTs | expireTs | salt
+ *                | uint16(svcCount) | uint16(svcType) | LP(svcPayload)
+ *
+ *   svcPayload = LP(channelName) | LP(uid_str) | uint16(privCount)
+ *                | ( uint16(privKey) | uint32(privExpireTs) ) ...
+ *
+ *   All multi-byte integers are little-endian.
+ *   LP(x) = uint16LE(len(x)) + x
+ *   Final token = "007" + Base64( compressed )
  */
 public class AgoraTokenBuilder {
 
@@ -30,30 +39,30 @@ public class AgoraTokenBuilder {
             return "";
         }
         try {
-            int issuedAt  = (int) (System.currentTimeMillis() / 1000);
-            int expireAt  = issuedAt + expireSeconds;
-            int salt      = new Random().nextInt(Integer.MAX_VALUE) + 1;
+            int issuedAt = (int) (System.currentTimeMillis() / 1000);
+            int expireAt = issuedAt + expireSeconds;
+            int salt     = new Random().nextInt(Integer.MAX_VALUE) + 1;
 
-            // signing key = SHA-256(appCertificate UTF-8 bytes)
-            byte[] signingKey = sha256(appCertificate.getBytes(StandardCharsets.UTF_8));
+            byte[] signingKey  = sha256(appCertificate.getBytes(StandardCharsets.UTF_8));
+            byte[] svcPayload  = buildRtcServicePayload(channelName, uid, expireAt);
 
-            // signature = HMAC-SHA256(signingKey, rawAppId | issuedAt_LE | expireAt_LE | salt_LE)
-            byte[] signature = computeSignature(signingKey, appId, issuedAt, expireAt, salt);
+            // Body = the portion that gets signed AND appears in the final message
+            ByteArrayOutputStream body = new ByteArrayOutputStream();
+            packString(body, appId);         // LP(appId)
+            body.write(uint32LE(issuedAt));
+            body.write(uint32LE(expireAt));
+            body.write(uint32LE(salt));
+            body.write(uint16LE(1));          // service count = 1
+            body.write(uint16LE(1));          // service type  = RTC (1)
+            packBytes(body, svcPayload);      // LP(svcPayload)
 
-            // RTC service payload
-            byte[] svcPayload = buildRtcServicePayload(channelName, uid, expireAt);
+            // Signature over the entire body
+            byte[] sig = hmacSha256(signingKey, body.toByteArray());
 
-            // Full token message
+            // Final message = LP(sig) prepended to body, then zlib-compressed
             ByteArrayOutputStream msg = new ByteArrayOutputStream();
-            msg.write(1);                       // AccessToken2 version byte
-            packString(msg, appId);             // length-prefixed app ID
-            msg.write(uint32LE(issuedAt));
-            msg.write(uint32LE(expireAt));
-            msg.write(uint32LE(salt));
-            msg.write(uint16LE(1));             // 1 service
-            msg.write(uint16LE(1));             // service type: RTC = 1
-            packBytes(msg, svcPayload);         // length-prefixed service data
-            packBytes(msg, signature);          // length-prefixed HMAC appended last
+            packBytes(msg, sig);              // LP(sig) first
+            msg.write(body.toByteArray());
 
             byte[] compressed = zlibCompress(msg.toByteArray());
             return VERSION + Base64.getEncoder().encodeToString(compressed);
@@ -64,23 +73,14 @@ public class AgoraTokenBuilder {
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
-    private static byte[] computeSignature(byte[] signingKey, String appId,
-                                           int issuedAt, int expireAt, int salt) throws Exception {
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        buf.write(appId.getBytes(StandardCharsets.UTF_8)); // raw 32 bytes, no length prefix
-        buf.write(uint32LE(issuedAt));
-        buf.write(uint32LE(expireAt));
-        buf.write(uint32LE(salt));
-        return hmacSha256(signingKey, buf.toByteArray());
-    }
-
     private static byte[] buildRtcServicePayload(String channelName, int uid,
                                                   int expireAt) throws IOException {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         packString(buf, channelName);
-        // uid as decimal string; empty string = wildcard (any UID may join)
+        // uid as unsigned decimal string; empty string grants wildcard access
         packString(buf, uid == 0 ? "" : Integer.toUnsignedString(uid));
-        buf.write(uint16LE(4)); // 4 privileges: JOIN=1, AUDIO=2, VIDEO=3, DATA_STREAM=4
+        // Privileges: JOIN=1, PUBLISH_AUDIO=2, PUBLISH_VIDEO=3, PUBLISH_DATA=4
+        buf.write(uint16LE(4));
         for (int key = 1; key <= 4; key++) {
             buf.write(uint16LE(key));
             buf.write(uint32LE(expireAt));
