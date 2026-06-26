@@ -7,12 +7,6 @@ import '../../providers/auth_provider.dart';
 import '../../providers/room_provider.dart';
 
 const String _agoraAppId = '5db80389fc284a3a8c166979882f118d';
-// Test token valid for channel 'flutter_ring' — replace with a
-// fresh token from Agora Console once the App Certificate in
-// room-service/src/main/resources/application.yml is corrected.
-const String _agoraTestToken =
-    '007eJxTYJDZ/EHjdv33Q0cLf2qbNjpVn1R9/XCZW6FH7lM9lYXC26QUGExTkiwMjC0s05KNLEwSjRMtkg3NzCzNLS0sjNIMDS1SnHfZZjUEMjJ4PjnEysgAgSA+D0NaTmlJSWpRfFFmXjoDAwCeGiM6';
-const String _agoraTestChannel = 'flutter_ring';
 
 class RoomCallScreen extends StatefulWidget {
   final String roomId;
@@ -47,9 +41,11 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
       final userId = context.read<AuthProvider>().currentUser?.id ?? 0;
       await provider.initWebSocket();
       await provider.joinRoom(widget.roomId);
-      // Use fixed test channel/token until the App Certificate in
-      // room-service application.yml is corrected.
-      await _initAgora(_agoraTestChannel, _agoraTestToken, userId);
+      final channel = provider.agoraChannelName;
+      final token = provider.agoraToken;
+      if (channel != null && channel.isNotEmpty) {
+        await _initAgora(channel, token, userId);
+      }
     });
   }
 
