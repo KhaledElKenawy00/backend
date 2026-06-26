@@ -83,7 +83,7 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
     await _engine!.joinChannel(
       token: agoraToken ?? '',
       channelId: channelName,
-      uid: uid,
+      uid: 0,
       options: const ChannelMediaOptions(
         channelProfile: ChannelProfileType.channelProfileCommunication,
         clientRoleType: ClientRoleType.clientRoleBroadcaster,

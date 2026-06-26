@@ -28,7 +28,7 @@ room:
   agora:
     channel-prefix: room-
     app-id: 5db80389fc284a3a8c166979882f118d
-    app-certificate: "29ed03c013874f08b643e1fd5084afe3"
+    app-certificate: "a6790438be834910b050de22cfcf2555"
   redis:
     ticket-prefix: "room:ws-ticket:"
   presence:
