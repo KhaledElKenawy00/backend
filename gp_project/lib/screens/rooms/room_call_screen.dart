@@ -182,7 +182,7 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
                       ],
                     ),
                   )
-                : !_joined
+                : !_joined || _engine == null
                 ? const Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,

@@ -23,8 +23,16 @@ class _RoomsScreenState extends State<RoomsScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RoomProvider>().loadRooms(_workspaceId);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final provider = context.read<RoomProvider>();
+      await provider.loadRooms(_workspaceId);
+      if (!mounted) return;
+      if (provider.rooms.length == 1 && provider.error == null) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => RoomCallScreen(roomId: provider.rooms.first.id),
+        ));
+      }
     });
   }
 
