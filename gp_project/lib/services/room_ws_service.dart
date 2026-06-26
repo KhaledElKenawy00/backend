@@ -81,23 +81,33 @@ class RoomWsService {
 
   void sendStateUpdate({required bool muted, required bool cameraOn, required bool screenSharing}) {
     if (_stompClient == null || !_isConnected || _activeRoomId == null) return;
-    _stompClient!.send(
-      destination: '/app/room/state',
-      body: jsonEncode({
-        'roomId': _activeRoomId,
-        'muted': muted,
-        'cameraOn': cameraOn,
-        'screenSharing': screenSharing,
-      }),
-    );
+    try {
+      _stompClient!.send(
+        destination: '/app/room/state',
+        body: jsonEncode({
+          'roomId': _activeRoomId,
+          'muted': muted,
+          'cameraOn': cameraOn,
+          'screenSharing': screenSharing,
+        }),
+      );
+    } catch (e) {
+      _isConnected = false;
+      dev.log('[ROOM_WS] state update failed: $e', name: 'RoomWsService');
+    }
   }
 
   void sendHeartbeat(String roomId) {
     if (_stompClient == null || !_isConnected) return;
-    _stompClient!.send(
-      destination: '/app/room/heartbeat',
-      body: jsonEncode({'roomId': roomId}),
-    );
+    try {
+      _stompClient!.send(
+        destination: '/app/room/heartbeat',
+        body: jsonEncode({'roomId': roomId}),
+      );
+    } catch (e) {
+      _isConnected = false;
+      dev.log('[ROOM_WS] heartbeat failed: $e', name: 'RoomWsService');
+    }
   }
 
   void dispose() {
