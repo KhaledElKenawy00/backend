@@ -23,16 +23,8 @@ class _RoomsScreenState extends State<RoomsScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final provider = context.read<RoomProvider>();
-      await provider.loadRooms(_workspaceId);
-      if (!mounted) return;
-      if (provider.rooms.length == 1 && provider.error == null) {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => RoomCallScreen(roomId: provider.rooms.first.id),
-        ));
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<RoomProvider>().loadRooms(_workspaceId);
     });
   }
 
@@ -44,12 +36,6 @@ class _RoomsScreenState extends State<RoomsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Rooms'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => context.read<RoomProvider>().loadRooms(_workspaceId),
-          ),
-        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'rooms_fab',
@@ -99,7 +85,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
                       onRefresh: () =>
                           context.read<RoomProvider>().loadRooms(_workspaceId),
                       child: ListView.builder(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
                         itemCount: roomProvider.rooms.length,
                         itemBuilder: (ctx, i) {
                           final room = roomProvider.rooms[i];
@@ -253,71 +239,120 @@ class _RoomTile extends StatelessWidget {
     final currentUserId = context.read<AuthProvider>().currentUser?.id;
     final isOwner = room.createdBy == currentUserId;
 
+    final memberText =
+        '${room.members.length} member${room.members.length == 1 ? '' : 's'}'
+        '${room.maxParticipants != null ? ' · max ${room.maxParticipants}' : ''}';
+
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: colorScheme.tertiaryContainer,
-          child: Icon(Icons.meeting_room,
-              color: colorScheme.onTertiaryContainer),
-        ),
-        title: Text(room.name,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(
-          '${room.members.length} member${room.members.length == 1 ? '' : 's'}'
-          '${room.maxParticipants != null ? ' · max ${room.maxParticipants}' : ''}',
-          style: TextStyle(
-              fontSize: 12,
-              color: colorScheme.onSurface.withValues(alpha: 0.6)),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
           children: [
-            if (isOwner) ...[
-              IconButton(
-                icon: const Icon(Icons.people_outline),
-                tooltip: 'Members',
-                onPressed: () => _showMembersDialog(context),
+            CircleAvatar(
+              backgroundColor: colorScheme.tertiaryContainer,
+              child: Icon(Icons.meeting_room,
+                  color: colorScheme.onTertiaryContainer),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    room.name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 15),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    memberText,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                tooltip: 'Edit',
-                onPressed: () => _showEditDialog(context),
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                tooltip: 'Delete',
-                onPressed: () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Delete Room'),
-                      content: Text('Delete "${room.name}"?'),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Cancel')),
-                        FilledButton(
-                            style: FilledButton.styleFrom(
-                                backgroundColor: Colors.red),
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Delete')),
-                      ],
-                    ),
-                  );
-                  if (ok == true && context.mounted) {
-                    context.read<RoomProvider>().deleteRoom(room.id);
-                  }
-                },
-              ),
-            ],
+            ),
+            const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => RoomCallScreen(roomId: room.id),
               )),
-              icon: const Icon(Icons.call, size: 18),
+              icon: const Icon(Icons.call, size: 16),
               label: const Text('Join'),
+              style: FilledButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
             ),
+            if (isOwner) ...[
+              const SizedBox(width: 4),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) {
+                  if (value == 'members') _showMembersDialog(context);
+                  if (value == 'edit') _showEditDialog(context);
+                  if (value == 'delete') {
+                    showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Delete Room'),
+                        content: Text('Delete "${room.name}"?'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel')),
+                          FilledButton(
+                              style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.red),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Delete')),
+                        ],
+                      ),
+                    ).then((ok) {
+                      if (ok == true && context.mounted) {
+                        context.read<RoomProvider>().deleteRoom(room.id);
+                      }
+                    });
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'members',
+                    child: ListTile(
+                      leading: Icon(Icons.people_outline),
+                      title: Text('Members'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: ListTile(
+                      leading: Icon(Icons.edit_outlined),
+                      title: Text('Edit'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(Icons.delete_outline, color: Colors.red),
+                      title: Text('Delete',
+                          style: TextStyle(color: Colors.red)),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
