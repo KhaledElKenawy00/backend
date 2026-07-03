@@ -21,6 +21,8 @@ import com.virtualoffice.workspace.dto.request.UpdateLayoutRequest;
 import com.virtualoffice.workspace.dto.response.LayoutResponse;
 import com.virtualoffice.workspace.service.LayoutService;
 import com.virtualoffice.workspace.util.UserContext;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "Layout", description = "The 2D floorplan: tilesets, layers, zones, and spawn points")
 @RestController
 @RequestMapping("/api/workspace/{workspaceId}/layout")
 public class LayoutController {
@@ -40,12 +43,15 @@ public class LayoutController {
         this.layoutService = layoutService;
     }
 
+    @Operation(summary = "Get the layout", description = "Requires MEMBER. The assembled floorplan the client renders from.")
     @GetMapping
     public LayoutResponse get(@PathVariable Long workspaceId, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return layoutService.getLayout(workspaceId, userId);
     }
 
+    @Operation(summary = "Update the layout",
+            description = "Requires ADMIN. Replaces the floorplan atomically; send expectedVersion (409 on a stale version).")
     @PutMapping
     public LayoutResponse update(@PathVariable Long workspaceId,
                                  @Valid @RequestBody UpdateLayoutRequest request,

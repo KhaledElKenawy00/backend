@@ -22,6 +22,8 @@ import com.virtualoffice.workspace.dto.request.UpdateTeamRequest;
 import com.virtualoffice.workspace.dto.response.TeamResponse;
 import com.virtualoffice.workspace.service.TeamService;
 import com.virtualoffice.workspace.util.UserContext;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -38,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@Tag(name = "Teams", description = "Named groupings of desks within a workspace")
 @RestController
 @RequestMapping("/api/workspace/{workspaceId}/teams")
 public class TeamController {
@@ -48,6 +51,7 @@ public class TeamController {
         this.teamService = teamService;
     }
 
+    @Operation(summary = "Create a team", description = "Requires ADMIN. 409 on duplicate name.")
     @PostMapping
     public ResponseEntity<TeamResponse> create(@PathVariable Long workspaceId,
                                                @Valid @RequestBody CreateTeamRequest request,
@@ -57,12 +61,14 @@ public class TeamController {
                 .body(teamService.createTeam(workspaceId, request, userId));
     }
 
+    @Operation(summary = "List teams", description = "Requires MEMBER.")
     @GetMapping
     public List<TeamResponse> list(@PathVariable Long workspaceId, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return teamService.getTeams(workspaceId, userId);
     }
 
+    @Operation(summary = "Update a team", description = "Requires ADMIN. Partial update. 409 on duplicate name.")
     @PutMapping("/{teamId}")
     public TeamResponse update(@PathVariable Long workspaceId,
                                @PathVariable Long teamId,
@@ -72,6 +78,7 @@ public class TeamController {
         return teamService.updateTeam(workspaceId, teamId, request, userId);
     }
 
+    @Operation(summary = "Delete a team", description = "Requires ADMIN.")
     @DeleteMapping("/{teamId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long workspaceId,

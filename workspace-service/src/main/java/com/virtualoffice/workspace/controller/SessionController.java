@@ -25,6 +25,8 @@ import com.virtualoffice.workspace.dto.response.MemberRoleResponse;
 import com.virtualoffice.workspace.dto.response.SessionConfigResponse;
 import com.virtualoffice.workspace.dto.response.ZoneResponse;
 import com.virtualoffice.workspace.service.SessionService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,6 +42,9 @@ import java.util.List;
  * Under {@code /api/internal/**} — blocked at the gateway and guarded by InternalAuthFilter
  * (X-Internal-Token); there is no end-user identity here.
  */
+@Tag(name = "Session (internal)",
+        description = "Server-to-server API for the Colyseus fork, room-service, and chat-service. "
+                + "Requires the X-Internal-Token header; blocked at the gateway for external clients.")
 @RestController
 @RequestMapping("/api/internal/workspace/{workspaceId}")
 public class SessionController {
@@ -50,36 +55,45 @@ public class SessionController {
         this.sessionService = sessionService;
     }
 
+    @Operation(summary = "Room boot config", description = "Workspace meta + layout + active desks + active map objects.")
     @GetMapping("/session-config")
     public SessionConfigResponse sessionConfig(@PathVariable Long workspaceId) {
         return sessionService.getSessionConfig(workspaceId);
     }
 
+    @Operation(summary = "Validate a join (Colyseus onAuth)",
+            description = "Returns identity, spawn, avatar, and role. 404 if the user has no active desk.")
     @GetMapping("/join-validation/{userId}")
     public JoinValidationResponse validateJoin(@PathVariable Long workspaceId, @PathVariable Long userId) {
         return sessionService.validateJoin(workspaceId, userId);
     }
 
+    @Operation(summary = "Get a member's workspace role",
+            description = "Workspace-scoped role check for chat-service / room-service. 404 if no active desk.")
     @GetMapping("/members/{userId}/role")
     public MemberRoleResponse memberRole(@PathVariable Long workspaceId, @PathVariable Long userId) {
         return sessionService.getMemberRole(workspaceId, userId);
     }
 
+    @Operation(summary = "Sync one presence update", description = "Writes isOnline/lastSeenAt and any non-null status/position.")
     @PostMapping("/presence")
     public void presence(@PathVariable Long workspaceId, @Valid @RequestBody PresenceSyncRequest request) {
         sessionService.syncPresence(workspaceId, request);
     }
 
+    @Operation(summary = "Sync a batch of presence updates", description = "Colyseus timer flush; missing desks are skipped.")
     @PostMapping("/presence/batch")
     public void presenceBatch(@PathVariable Long workspaceId, @Valid @RequestBody PresenceBatchRequest request) {
         sessionService.syncPresenceBatch(workspaceId, request);
     }
 
+    @Operation(summary = "List zones", description = "Zone bounds + voiceRoomId + proximityRadius for room-service voice.")
     @GetMapping("/zones")
     public List<ZoneResponse> zones(@PathVariable Long workspaceId) {
         return sessionService.getZones(workspaceId);
     }
 
+    @Operation(summary = "Get the chat context", description = "Canonical workspace channel key (workspace:{id}) for chat-service.")
     @GetMapping("/chat-context")
     public ChatContextResponse chatContext(@PathVariable Long workspaceId) {
         return sessionService.getChatContext(workspaceId);

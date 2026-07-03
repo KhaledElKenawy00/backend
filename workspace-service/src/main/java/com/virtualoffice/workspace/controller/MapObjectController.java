@@ -22,6 +22,8 @@ import com.virtualoffice.workspace.dto.request.UpdateMapObjectRequest;
 import com.virtualoffice.workspace.dto.response.MapObjectResponse;
 import com.virtualoffice.workspace.service.MapObjectService;
 import com.virtualoffice.workspace.util.UserContext;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -39,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@Tag(name = "Map Objects", description = "Interactive floor objects: computers and whiteboards")
 @RestController
 @RequestMapping("/api/workspace/{workspaceId}/map-objects")
 public class MapObjectController {
@@ -49,6 +52,7 @@ public class MapObjectController {
         this.mapObjectService = mapObjectService;
     }
 
+    @Operation(summary = "Create a map object", description = "Requires ADMIN. Server generates the roomId.")
     @PostMapping
     public ResponseEntity<MapObjectResponse> create(@PathVariable Long workspaceId,
                                                     @Valid @RequestBody CreateMapObjectRequest request,
@@ -58,12 +62,14 @@ public class MapObjectController {
                 .body(mapObjectService.createMapObject(workspaceId, request, userId));
     }
 
+    @Operation(summary = "List map objects", description = "Requires MEMBER.")
     @GetMapping
     public List<MapObjectResponse> list(@PathVariable Long workspaceId, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return mapObjectService.getMapObjects(workspaceId, userId);
     }
 
+    @Operation(summary = "Update a map object", description = "Requires ADMIN. Partial update.")
     @PutMapping("/{id}")
     public MapObjectResponse update(@PathVariable Long workspaceId,
                                     @PathVariable Long id,
@@ -73,12 +79,14 @@ public class MapObjectController {
         return mapObjectService.updateMapObject(workspaceId, id, request, userId);
     }
 
+    @Operation(summary = "Toggle active", description = "Requires ADMIN. Flips isActive.")
     @PatchMapping("/{id}/toggle")
     public MapObjectResponse toggle(@PathVariable Long workspaceId, @PathVariable Long id, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return mapObjectService.toggleActive(workspaceId, id, userId);
     }
 
+    @Operation(summary = "Delete a map object", description = "Requires ADMIN.")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long workspaceId, @PathVariable Long id, HttpServletRequest http) {

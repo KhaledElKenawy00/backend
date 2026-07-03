@@ -23,6 +23,8 @@ import com.virtualoffice.workspace.dto.response.DeskResponse;
 import com.virtualoffice.workspace.dto.response.PageResponse;
 import com.virtualoffice.workspace.service.DeskService;
 import com.virtualoffice.workspace.util.UserContext;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +40,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "Desks", description = "Workspace membership, per-workspace profile, presence, and status")
 @RestController
 @RequestMapping("/api/workspace/{workspaceId}/desks")
 public class DeskController {
@@ -48,6 +51,7 @@ public class DeskController {
         this.deskService = deskService;
     }
 
+    @Operation(summary = "List members (paginated)", description = "Requires MEMBER. Pages are 0-based.")
     @GetMapping
     public PageResponse<DeskResponse> members(@PathVariable Long workspaceId,
                                               @PageableDefault(size = 20) Pageable pageable,
@@ -56,18 +60,22 @@ public class DeskController {
         return PageResponse.of(deskService.getMembers(workspaceId, userId, pageable));
     }
 
+    @Operation(summary = "Get my desk", description = "The caller's own desk with links and widgets.")
     @GetMapping("/me")
     public DeskResponse myDesk(@PathVariable Long workspaceId, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return deskService.getMyDesk(workspaceId, userId);
     }
 
+    @Operation(summary = "Get a desk by id", description = "Requires MEMBER.")
     @GetMapping("/{deskId}")
     public DeskResponse get(@PathVariable Long workspaceId, @PathVariable Long deskId, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return deskService.getDesk(workspaceId, deskId, userId);
     }
 
+    @Operation(summary = "Update my desk",
+            description = "Owner-only (even admins can't edit another user's desk). links/widgets replace wholesale.")
     @PutMapping("/{deskId}")
     public DeskResponse update(@PathVariable Long workspaceId,
                                @PathVariable Long deskId,
@@ -77,6 +85,7 @@ public class DeskController {
         return deskService.updateDesk(workspaceId, deskId, request, userId);
     }
 
+    @Operation(summary = "Update my status", description = "Owner-only. Sets presence status shown to others.")
     @PatchMapping("/{deskId}/status")
     public DeskResponse updateStatus(@PathVariable Long workspaceId,
                                      @PathVariable Long deskId,
@@ -86,6 +95,7 @@ public class DeskController {
         return deskService.updateStatus(workspaceId, deskId, request, userId);
     }
 
+    @Operation(summary = "Remove a member", description = "Requires ADMIN. Deactivates the desk. 409 for the OWNER desk.")
     @DeleteMapping("/{deskId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void remove(@PathVariable Long workspaceId, @PathVariable Long deskId, HttpServletRequest http) {
