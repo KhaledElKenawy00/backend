@@ -22,6 +22,8 @@ import com.virtualoffice.workspace.dto.request.UpdateWorkspaceRequest;
 import com.virtualoffice.workspace.dto.response.WorkspaceResponse;
 import com.virtualoffice.workspace.service.WorkspaceService;
 import com.virtualoffice.workspace.util.UserContext;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -37,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@Tag(name = "Workspaces", description = "Create and manage workspaces (the virtual offices)")
 @RestController
 @RequestMapping("/api/workspace")
 public class WorkspaceController {
@@ -47,6 +50,8 @@ public class WorkspaceController {
         this.workspaceService = workspaceService;
     }
 
+    @Operation(summary = "Create a workspace",
+            description = "Creator gets an active OWNER desk. 409 if the slug is taken.")
     @PostMapping
     public ResponseEntity<WorkspaceResponse> create(@Valid @RequestBody CreateWorkspaceRequest request,
                                                     HttpServletRequest http) {
@@ -55,18 +60,21 @@ public class WorkspaceController {
                 .body(workspaceService.createWorkspace(request, userId));
     }
 
+    @Operation(summary = "List my workspaces", description = "Every workspace the caller has a desk in.")
     @GetMapping("/mine")
     public List<WorkspaceResponse> mine(HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return workspaceService.getMyWorkspaces(userId);
     }
 
+    @Operation(summary = "Get a workspace", description = "Requires MEMBER. 403 if not a member.")
     @GetMapping("/{id}")
     public WorkspaceResponse get(@PathVariable Long id, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return workspaceService.getWorkspace(id, userId);
     }
 
+    @Operation(summary = "Update a workspace", description = "Requires ADMIN. Partial update.")
     @PutMapping("/{id}")
     public WorkspaceResponse update(@PathVariable Long id,
                                     @Valid @RequestBody UpdateWorkspaceRequest request,
@@ -75,12 +83,14 @@ public class WorkspaceController {
         return workspaceService.updateWorkspace(id, request, userId);
     }
 
+    @Operation(summary = "Archive a workspace", description = "OWNER only. Soft archive (status=ARCHIVED).")
     @DeleteMapping("/{id}")
     public WorkspaceResponse archive(@PathVariable Long id, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
         return workspaceService.archiveWorkspace(id, userId);
     }
 
+    @Operation(summary = "Rotate the invite token", description = "Requires ADMIN. Invalidates the old link.")
     @PostMapping("/{id}/rotate-invite-token")
     public WorkspaceResponse rotateInviteToken(@PathVariable Long id, HttpServletRequest http) {
         Long userId = UserContext.fromRequest(http).getUserId();
