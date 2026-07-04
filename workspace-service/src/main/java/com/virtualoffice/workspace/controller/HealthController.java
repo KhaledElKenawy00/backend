@@ -17,15 +17,19 @@
  */
 package com.virtualoffice.workspace.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 // no auth required — kept open so liveness/readiness probes can hit it directly
+@Tag(name = "Health", description = "Liveness/readiness probe")
 @RestController
 @RequestMapping("/api/workspace")
 public class HealthController {
 
+    @Operation(summary = "Health check", description = "Returns plain text OK. No auth required.")
     @GetMapping("/health")
     public String health() {
         return "OK";
