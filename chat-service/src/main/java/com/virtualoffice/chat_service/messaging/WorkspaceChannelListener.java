@@ -17,6 +17,7 @@
  */
 package com.virtualoffice.chat_service.messaging;
 
+import com.virtualoffice.chat_service.client.NotificationsPushClient;
 import com.virtualoffice.chat_service.model.Channel;
 import com.virtualoffice.chat_service.model.ChannelType;
 import com.virtualoffice.chat_service.repository.ChannelRepository;
@@ -28,6 +29,8 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Provisions and syncs the canonical per-workspace chat channel from workspace-service events
@@ -43,6 +46,7 @@ public class WorkspaceChannelListener {
     private static final String DEFAULT_CHANNEL_NAME = "general";
 
     private final ChannelRepository channelRepository;
+    private final NotificationsPushClient notificationsPushClient;
 
     @RabbitListener(queues = "${workspace.channel.queue}")
     public void handle(WorkspaceChannelEvent event) {
@@ -83,11 +87,34 @@ public class WorkspaceChannelListener {
     }
 
     private void addMember(WorkspaceChannelEvent event) {
-        Channel channel = canonicalOrWarn(event);
-        if (channel == null || event.getUserId() == null) {
+        if (event.getUserId() == null || event.getWorkspaceId() == null) return;
+
+        List<Channel> channels = channelRepository.findGroupChannelsByWorkspaceId(event.getWorkspaceId());
+        if (channels.isEmpty()) {
+            log.warn("no group channels for workspace {}; dropping ADD_MEMBER for user {}",
+                    event.getWorkspaceId(), event.getUserId());
             return;
         }
-        channelRepository.addMember(channel.getId(), event.getUserId(), Instant.now());
+
+        // Collect existing members before mutation so we know who to notify
+        Set<Integer> existingMembers = channels.stream()
+                .flatMap(c -> c.getMembers().stream())
+                .filter(uid -> !uid.equals(event.getUserId()))
+                .collect(Collectors.toSet());
+
+        // Add new member to every group channel (canonical + user-created) idempotently
+        Instant now = Instant.now();
+        for (Channel channel : channels) {
+            channelRepository.addMember(channel.getId(), event.getUserId(), now);
+        }
+
+        // Notify the new member so their app reloads channels/rooms for this workspace
+        notificationsPushClient.pushMembershipUpdated(
+                event.getUserId(), "WORKSPACE", event.getWorkspaceId());
+
+        // Notify existing members so their channel list refreshes (shows the new member)
+        existingMembers.forEach(uid ->
+                notificationsPushClient.pushMembershipUpdated(uid, "WORKSPACE", event.getWorkspaceId()));
     }
 
     private void removeMember(WorkspaceChannelEvent event) {

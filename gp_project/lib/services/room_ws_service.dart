@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as dev;
 import 'package:stomp_dart_client/stomp_dart_client.dart';
@@ -28,12 +29,14 @@ class RoomWsService {
       final wsUrl = '${ApiConstants.roomWsUrl}?ticket=$ticket';
       dev.log('[ROOM_WS] connecting to $wsUrl', name: 'RoomWsService');
 
+      final completer = Completer<void>();
       _stompClient = StompClient(
         config: StompConfig(
           url: wsUrl,
           onConnect: (frame) {
             _isConnected = true;
             dev.log('[ROOM_WS] STOMP connected', name: 'RoomWsService');
+            if (!completer.isCompleted) completer.complete();
           },
           onDisconnect: (_) {
             _isConnected = false;
@@ -42,11 +45,14 @@ class RoomWsService {
           onWebSocketError: (e) {
             _isConnected = false;
             dev.log('[ROOM_WS] WS error: $e', name: 'RoomWsService');
+            if (!completer.isCompleted) completer.completeError(e);
           },
           reconnectDelay: Duration.zero,
         ),
       );
       _stompClient!.activate();
+      await completer.future
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
       dev.log('[ROOM_WS] init error: $e', name: 'RoomWsService');
     }

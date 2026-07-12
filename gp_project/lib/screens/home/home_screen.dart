@@ -79,16 +79,25 @@ class _HomeScreenState extends State<HomeScreen> {
     notifProvider.onMembershipUpdated = (type, wsId) {
       if (!mounted) return;
       final wsProvider = context.read<WorkspaceProvider>();
-      final activeId = wsProvider.activeWorkspaceId ?? 1;
-      final targetId = wsId != 0 ? wsId : activeId;
-      if (wsId != 0 && wsId != activeId) {
-        final ws = wsProvider.workspaces
-            .where((w) => w.id == wsId)
-            .firstOrNull;
-        if (ws != null) wsProvider.selectWorkspace(ws);
+
+      void doRefresh() {
+        if (!mounted) return;
+        final activeId = wsProvider.activeWorkspaceId ?? 1;
+        final targetId = wsId != 0 ? wsId : activeId;
+        if (wsId != 0 && wsId != activeId) {
+          final ws = wsProvider.workspaces.where((w) => w.id == wsId).firstOrNull;
+          if (ws != null) wsProvider.selectWorkspace(ws);
+        }
+        context.read<ChatProvider>().loadChannels(targetId, silent: true);
+        context.read<RoomProvider>().loadRooms(targetId, silent: true);
       }
-      context.read<ChatProvider>().loadChannels(targetId, silent: true);
-      context.read<RoomProvider>().loadRooms(targetId, silent: true);
+
+      // If the workspace is not in our list yet (just joined via invite), fetch first
+      if (wsId != 0 && wsProvider.workspaces.every((w) => w.id != wsId)) {
+        wsProvider.fetchMyWorkspaces().then((_) => doRefresh());
+      } else {
+        doRefresh();
+      }
     };
     await Future.wait([
       chatProvider.loadChannels(workspaceId),

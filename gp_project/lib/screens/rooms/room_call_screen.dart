@@ -8,7 +8,8 @@ import '../../providers/room_provider.dart';
 
 const String _agoraAppId = '5db80389fc284a3a8c166979882f118d';
 // Replace with fresh token from Agora Console every hour
-const String _agoraFallbackToken = '007eJxTYBA7uDztuuFv2689oSYxH93/bwusNva6UyVs9nriXceAnngFBtOUJAsDYwvLtGQjC5NE40SLZEMzM0tzSwsLozRDQ4sUg59BWQ2BjAy5kYUMjFAI4vMwpOWUlpSkFsUXZealMzAAAHi+IqQ=';
+const String _agoraFallbackToken =
+    '007eJxTYChmmh0/Y/96pbXaj+3za1PFc82tykrj3A0VZH4F7Wxz7VBgME1JsjAwtrBMSzayMEk0TrRINjQzszS3tLAwSjM0tEgxLQ7OaghkZNDTucHACIUgPg9DWk5pSUlqUXxRZl46AwMATdEfFw==';
 const String _agoraFallbackChannel = 'flutter_ring';
 
 class RoomCallScreen extends StatefulWidget {
@@ -50,7 +51,11 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
     });
   }
 
-  Future<void> _initAgora(String channelName, String? agoraToken, int uid) async {
+  Future<void> _initAgora(
+    String channelName,
+    String? agoraToken,
+    int uid,
+  ) async {
     await [Permission.microphone, Permission.camera].request();
 
     _channelId = channelName;
@@ -60,26 +65,34 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
     await _engine!.initialize(const RtcEngineContext(appId: _agoraAppId));
     await _engine!.enableVideo();
 
-    _engine!.registerEventHandler(RtcEngineEventHandler(
-      onJoinChannelSuccess: (connection, elapsed) async {
-        await _engine?.setEnableSpeakerphone(true);
-        if (mounted) {
-          setState(() {
-            _joined = true;
-            _localUid = connection.localUid;
-          });
-        }
-      },
-      onUserJoined: (connection, remoteUid, elapsed) {
-        if (mounted) { setState(() => _remoteUids.add(remoteUid)); }
-      },
-      onUserOffline: (connection, remoteUid, reason) {
-        if (mounted) { setState(() => _remoteUids.remove(remoteUid)); }
-      },
-      onError: (err, msg) {
-        if (mounted) { setState(() => _agoraError = '${err.name} (${err.index}): $msg'); }
-      },
-    ));
+    _engine!.registerEventHandler(
+      RtcEngineEventHandler(
+        onJoinChannelSuccess: (connection, elapsed) async {
+          await _engine?.setEnableSpeakerphone(true);
+          if (mounted) {
+            setState(() {
+              _joined = true;
+              _localUid = connection.localUid;
+            });
+          }
+        },
+        onUserJoined: (connection, remoteUid, elapsed) {
+          if (mounted) {
+            setState(() => _remoteUids.add(remoteUid));
+          }
+        },
+        onUserOffline: (connection, remoteUid, reason) {
+          if (mounted) {
+            setState(() => _remoteUids.remove(remoteUid));
+          }
+        },
+        onError: (err, msg) {
+          if (mounted) {
+            setState(() => _agoraError = '${err.name} (${err.index}): $msg');
+          }
+        },
+      ),
+    );
 
     await _engine!.joinChannel(
       token: _agoraFallbackToken,
@@ -96,7 +109,10 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
     setState(() => _muted = !_muted);
     _engine?.muteLocalAudioStream(_muted);
     context.read<RoomProvider>().sendStateUpdate(
-        muted: _muted, cameraOn: _cameraOn, screenSharing: false);
+      muted: _muted,
+      cameraOn: _cameraOn,
+      screenSharing: false,
+    );
   }
 
   void _toggleCamera() {
@@ -104,7 +120,10 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
     _engine?.muteLocalVideoStream(!_cameraOn);
     if (_cameraOn) _engine?.startPreview();
     context.read<RoomProvider>().sendStateUpdate(
-        muted: _muted, cameraOn: _cameraOn, screenSharing: false);
+      muted: _muted,
+      cameraOn: _cameraOn,
+      screenSharing: false,
+    );
   }
 
   Future<void> _leave() async {
@@ -139,8 +158,10 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
             children: [
               CircularProgressIndicator(color: Colors.white),
               SizedBox(height: 16),
-              Text('Joining room…',
-                  style: TextStyle(color: Colors.white, fontSize: 16)),
+              Text(
+                'Joining room…',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
             ],
           ),
         ),
@@ -157,8 +178,10 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(room?.name ?? 'Room',
-                style: const TextStyle(color: Colors.white)),
+            Text(
+              room?.name ?? 'Room',
+              style: const TextStyle(color: Colors.white),
+            ),
             Text(
               '${allUids.length} participant${allUids.length == 1 ? '' : 's'}',
               style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -174,13 +197,20 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline,
-                            color: Colors.redAccent, size: 48),
+                        const Icon(
+                          Icons.error_outline,
+                          color: Colors.redAccent,
+                          size: 48,
+                        ),
                         const SizedBox(height: 12),
-                        Text(_agoraError!,
-                            style: const TextStyle(
-                                color: Colors.redAccent, fontSize: 13),
-                            textAlign: TextAlign.center),
+                        Text(
+                          _agoraError!,
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ],
                     ),
                   )
@@ -191,46 +221,53 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
                       children: [
                         CircularProgressIndicator(color: Colors.white54),
                         SizedBox(height: 12),
-                        Text('Connecting to call…',
-                            style: TextStyle(color: Colors.white54)),
+                        Text(
+                          'Connecting to call…',
+                          style: TextStyle(color: Colors.white54),
+                        ),
                       ],
                     ),
                   )
                 : allUids.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.people_outline,
-                                size: 64, color: Colors.white30),
-                            SizedBox(height: 12),
-                            Text('Waiting for others…',
-                                style: TextStyle(color: Colors.white54)),
-                          ],
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.people_outline,
+                          size: 64,
+                          color: Colors.white30,
                         ),
-                      )
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                        SizedBox(height: 12),
+                        Text(
+                          'Waiting for others…',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                      ],
+                    ),
+                  )
+                : GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
                           maxCrossAxisExtent: 200,
                           mainAxisSpacing: 12,
                           crossAxisSpacing: 12,
                         ),
-                        itemCount: allUids.length,
-                        itemBuilder: (ctx, i) {
-                          final uid = allUids[i];
-                          final isLocal = uid == _localUid;
-                          return _VideoTile(
-                            engine: _engine!,
-                            uid: uid,
-                            channelId: _channelId ?? '',
-                            isLocal: isLocal,
-                            cameraOn: isLocal ? _cameraOn : true,
-                            muted: isLocal ? _muted : false,
-                          );
-                        },
-                      ),
+                    itemCount: allUids.length,
+                    itemBuilder: (ctx, i) {
+                      final uid = allUids[i];
+                      final isLocal = uid == _localUid;
+                      return _VideoTile(
+                        engine: _engine!,
+                        uid: uid,
+                        channelId: _channelId ?? '',
+                        isLocal: isLocal,
+                        cameraOn: isLocal ? _cameraOn : true,
+                        muted: isLocal ? _muted : false,
+                      );
+                    },
+                  ),
           ),
           Container(
             color: Colors.black45,
@@ -318,9 +355,10 @@ class _VideoTile extends StatelessWidget {
                 child: Text(
                   '$uid',
                   style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16),
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
               ),
             ),
@@ -330,17 +368,20 @@ class _VideoTile extends StatelessWidget {
             right: 8,
             child: Row(
               children: [
-                Icon(muted ? Icons.mic_off : Icons.mic,
-                    size: 14,
-                    color: muted ? Colors.red : Colors.green),
+                Icon(
+                  muted ? Icons.mic_off : Icons.mic,
+                  size: 14,
+                  color: muted ? Colors.red : Colors.green,
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     isLocal ? 'You' : 'User $uid',
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        shadows: [Shadow(blurRadius: 4)]),
+                      color: Colors.white,
+                      fontSize: 11,
+                      shadows: [Shadow(blurRadius: 4)],
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -378,14 +419,16 @@ class _ControlButton extends StatelessWidget {
           CircleAvatar(
             radius: 28,
             backgroundColor: filled ? color : Colors.white12,
-            child: Icon(icon,
-                color: filled ? Colors.white : color, size: 26),
+            child: Icon(icon, color: filled ? Colors.white : color, size: 26),
           ),
           const SizedBox(height: 6),
-          Text(label,
-              style: TextStyle(
-                  color: color == Colors.white ? Colors.white70 : color,
-                  fontSize: 12)),
+          Text(
+            label,
+            style: TextStyle(
+              color: color == Colors.white ? Colors.white70 : color,
+              fontSize: 12,
+            ),
+          ),
         ],
       ),
     );

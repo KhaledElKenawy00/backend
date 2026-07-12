@@ -48,6 +48,9 @@ public interface ChannelRepository extends MongoRepository<Channel, ObjectId> {
     @Query("{ 'type': ?0, 'members': ?1 }")
     Page<Channel> findDirectChannelsForUser(ChannelType type, Integer userId, Pageable pageable);
 
+    @Query("{ 'workspaceId': ?0, 'type': 'GROUP' }")
+    java.util.List<Channel> findGroupChannelsByWorkspaceId(Integer workspaceId);
+
     @Query("{ '_id': ?0 }")
     @Update("{ '$addToSet': { 'members': ?1 }, '$set': { 'updatedAt': ?2 } }")
     long addMember(ObjectId channelId, Integer userId, Instant updatedAt);

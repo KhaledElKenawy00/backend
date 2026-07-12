@@ -30,21 +30,11 @@ class VirtualOfficeApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => AuthProvider(authStorage, AuthService()),
         ),
-        ChangeNotifierProvider(
-          create: (_) => ChatProvider(apiClient),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => NotificationProvider(apiClient),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => RoomProvider(apiClient),
-        ),
-        Provider<UserService>(
-          create: (_) => UserService(apiClient),
-        ),
-        Provider<WorkspaceService>(
-          create: (_) => WorkspaceService(apiClient),
-        ),
+        ChangeNotifierProvider(create: (_) => ChatProvider(apiClient)),
+        ChangeNotifierProvider(create: (_) => NotificationProvider(apiClient)),
+        ChangeNotifierProvider(create: (_) => RoomProvider(apiClient)),
+        Provider<UserService>(create: (_) => UserService(apiClient)),
+        Provider<WorkspaceService>(create: (_) => WorkspaceService(apiClient)),
         ChangeNotifierProvider(
           create: (_) => WorkspaceProvider(WorkspaceService(apiClient)),
         ),
@@ -53,13 +43,9 @@ class VirtualOfficeApp extends StatelessWidget {
         title: 'Virtual Office',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF4A6CF7),
-          ),
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4A6CF7)),
           useMaterial3: true,
-          inputDecorationTheme: const InputDecorationTheme(
-            filled: true,
-          ),
+          inputDecorationTheme: const InputDecorationTheme(filled: true),
         ),
         home: const SplashScreen(),
       ),
