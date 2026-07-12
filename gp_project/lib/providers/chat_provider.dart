@@ -90,14 +90,16 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
-  Future<void> loadChannels(int workspaceId) async {
+  Future<void> loadChannels(int workspaceId, {bool silent = false}) async {
     dev.log(
-      '[CHAT_PROVIDER] loadChannels(workspaceId=$workspaceId)',
+      '[CHAT_PROVIDER] loadChannels(workspaceId=$workspaceId, silent=$silent)',
       name: 'ChatProvider',
     );
-    _isLoadingChannels = true;
-    _errorMessage = null;
-    notifyListeners();
+    if (!silent) {
+      _isLoadingChannels = true;
+      _errorMessage = null;
+      notifyListeners();
+    }
 
     try {
       _channels = await _channelService.getChannels(workspaceId: workspaceId);
@@ -117,9 +119,9 @@ class ChatProvider extends ChangeNotifier {
       }
     } catch (e) {
       dev.log('[CHAT_PROVIDER] loadChannels ERROR: $e', name: 'ChatProvider');
-      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      if (!silent) _errorMessage = e.toString().replaceFirst('Exception: ', '');
     } finally {
-      _isLoadingChannels = false;
+      if (!silent) _isLoadingChannels = false;
       notifyListeners();
     }
   }

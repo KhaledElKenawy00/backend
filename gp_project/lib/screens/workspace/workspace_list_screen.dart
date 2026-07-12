@@ -35,11 +35,24 @@ class _WorkspaceListScreenState extends State<WorkspaceListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'workspace_list_fab',
-        onPressed: () => _showCreateDialog(context),
-        icon: const Icon(Icons.add),
-        label: const Text('New Workspace'),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'workspace_join_fab',
+            onPressed: () => _showJoinDialog(context),
+            tooltip: 'Join with invite code',
+            child: const Icon(Icons.link),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'workspace_list_fab',
+            onPressed: () => _showCreateDialog(context),
+            icon: const Icon(Icons.add),
+            label: const Text('New Workspace'),
+          ),
+        ],
       ),
       body: provider.isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -150,6 +163,46 @@ class _WorkspaceListScreenState extends State<WorkspaceListScreen> {
         slug: slugCtrl.text.trim(),
         description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
       );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', ''))));
+    }
+  }
+
+  Future<void> _showJoinDialog(BuildContext context) async {
+    final tokenCtrl = TextEditingController();
+    final provider = context.read<WorkspaceProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Join Workspace'),
+        content: TextField(
+          controller: tokenCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Invite code',
+            hintText: 'Paste the invite token here',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Join')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final token = tokenCtrl.text.trim();
+    if (token.isEmpty) return;
+    try {
+      await provider.acceptInvitation(token);
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Joined workspace successfully!')));
     } catch (e) {
       messenger.showSnackBar(SnackBar(
           content: Text(e.toString().replaceFirst('Exception: ', ''))));

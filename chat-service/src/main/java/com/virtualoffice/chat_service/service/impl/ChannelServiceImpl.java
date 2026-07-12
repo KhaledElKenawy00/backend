@@ -17,6 +17,7 @@
  */
 package com.virtualoffice.chat_service.service.impl;
 
+import com.virtualoffice.chat_service.client.NotificationsPushClient;
 import com.virtualoffice.chat_service.client.WorkspaceClient;
 import com.virtualoffice.chat_service.client.WorkspaceRole;
 import com.virtualoffice.chat_service.dto.mapper.DtoMapper;
@@ -50,6 +51,7 @@ public class ChannelServiceImpl implements ChannelService {
 
     private final ChannelRepository channelRepository;
     private final WorkspaceClient workspaceClient;
+    private final NotificationsPushClient notificationsPushClient;
 
     @Override
     public ChannelResponse createGroupChannel(CreateChannelRequest request, Integer creatorUserId) {
@@ -79,6 +81,14 @@ public class ChannelServiceImpl implements ChannelService {
                 .build();
 
         Channel saved = channelRepository.save(channel);
+
+        // Push real-time MEMBERSHIP_UPDATED to every non-creator member so their
+        // app refreshes immediately without waiting for the polling interval.
+        members.stream()
+                .filter(uid -> !uid.equals(creatorUserId))
+                .forEach(uid -> notificationsPushClient.pushMembershipUpdated(
+                        uid, "CHANNEL", request.getWorkspaceId()));
+
         return DtoMapper.toChannelResponse(saved);
     }
 

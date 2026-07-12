@@ -5,6 +5,8 @@ import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../services/notification_ws_service.dart';
 
+export '../services/notification_ws_service.dart' show OnMembershipUpdatedCallback;
+
 class NotificationProvider extends ChangeNotifier {
   final ApiClient _apiClient;
   late final NotificationService _notificationService;
@@ -14,6 +16,8 @@ class NotificationProvider extends ChangeNotifier {
   int _unreadCount = 0;
   bool _isLoading = false;
   String? _errorMessage;
+
+  OnMembershipUpdatedCallback? onMembershipUpdated;
 
   NotificationProvider(this._apiClient) {
     _notificationService = NotificationService(_apiClient);
@@ -33,8 +37,10 @@ class NotificationProvider extends ChangeNotifier {
         dev.log('[NOTIF_PROVIDER] NEW_NOTIFICATION received: $payload', name: 'NotificationProvider');
         _unreadCount++;
         notifyListeners();
-        // Refresh list in background so the new notification appears
         load();
+      },
+      onMembershipUpdated: (type, workspaceId) {
+        onMembershipUpdated?.call(type, workspaceId);
       },
     );
   }

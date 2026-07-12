@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -21,11 +22,42 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _initProviders();
+    // Poll every 10 s so newly-added rooms/channels appear without manual refresh
+    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted) return;
+      _silentRefresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  void _silentRefresh() {
+    final workspaceId =
+        context.read<WorkspaceProvider>().activeWorkspaceId ?? 1;
+    context.read<ChatProvider>().loadChannels(workspaceId, silent: true);
+    context.read<RoomProvider>().loadRooms(workspaceId, silent: true);
+  }
+
+  void _onTabSelected(int index) {
+    setState(() => _currentIndex = index);
+    final workspaceId =
+        context.read<WorkspaceProvider>().activeWorkspaceId ?? 1;
+    // Refresh rooms/channels each time the user taps the tab
+    if (index == 0) {
+      context.read<ChatProvider>().loadChannels(workspaceId);
+    } else if (index == 2) {
+      context.read<RoomProvider>().loadRooms(workspaceId);
+    }
   }
 
   Future<void> _initProviders() async {
@@ -44,6 +76,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await chatProvider.initWebSocket(userId, role);
     await notifProvider.initWebSocket();
+    notifProvider.onMembershipUpdated = (type, wsId) {
+      if (!mounted) return;
+      final wsProvider = context.read<WorkspaceProvider>();
+      final activeId = wsProvider.activeWorkspaceId ?? 1;
+      final targetId = wsId != 0 ? wsId : activeId;
+      if (wsId != 0 && wsId != activeId) {
+        final ws = wsProvider.workspaces
+            .where((w) => w.id == wsId)
+            .firstOrNull;
+        if (ws != null) wsProvider.selectWorkspace(ws);
+      }
+      context.read<ChatProvider>().loadChannels(targetId, silent: true);
+      context.read<RoomProvider>().loadRooms(targetId, silent: true);
+    };
     await Future.wait([
       chatProvider.loadChannels(workspaceId),
       chatProvider.loadDms(),
@@ -77,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+        onDestinationSelected: _onTabSelected,
         destinations: [
           NavigationDestination(
             icon: Badge(

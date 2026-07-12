@@ -111,6 +111,15 @@ class WorkspaceService {
     return DeskModel.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  Future<void> updateDeskPosition(int workspaceId, int deskId, int positionX, int positionY) async {
+    final headers = await _apiClient.workspaceServiceHeaders();
+    final uri = Uri.parse(
+        '${ApiConstants.workspaceServiceBase}/api/workspace/$workspaceId/desks/$deskId/position');
+    final response = await http.patch(uri, headers: headers,
+        body: jsonEncode({'positionX': positionX, 'positionY': positionY}));
+    _check(response, 'update desk position');
+  }
+
   Future<DeskModel> updateDeskStatus(int workspaceId, int deskId, {
     required String status,
     String? statusEmoji,
@@ -207,17 +216,17 @@ class WorkspaceService {
 
   Future<void> acceptInvitation(String token) async {
     final headers = await _apiClient.workspaceServiceHeaders();
-    final uri = Uri.parse('${ApiConstants.workspaceServiceBase}/api/invitations/accept');
-    final response = await http.post(uri, headers: headers,
-        body: jsonEncode({'token': token}));
+    final uri = Uri.parse('${ApiConstants.workspaceServiceBase}/api/invitations/accept')
+        .replace(queryParameters: {'token': token});
+    final response = await http.post(uri, headers: headers);
     _check(response, 'accept invitation');
   }
 
   Future<void> declineInvitation(String token) async {
     final headers = await _apiClient.workspaceServiceHeaders();
-    final uri = Uri.parse('${ApiConstants.workspaceServiceBase}/api/invitations/decline');
-    final response = await http.post(uri, headers: headers,
-        body: jsonEncode({'token': token}));
+    final uri = Uri.parse('${ApiConstants.workspaceServiceBase}/api/invitations/decline')
+        .replace(queryParameters: {'token': token});
+    final response = await http.post(uri, headers: headers);
     _check(response, 'decline invitation');
   }
 

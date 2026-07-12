@@ -28,7 +28,7 @@ room:
   agora:
     channel-prefix: room-
     app-id: 5db80389fc284a3a8c166979882f118d
-    app-certificate: "a6790438be834910b050de22cfcf2555"
+    app-certificate: "29ed03c013874f08b643e1fd5084afe3"
   redis:
     ticket-prefix: "room:ws-ticket:"
   presence:
@@ -47,6 +47,11 @@ room:
 workspace:
   service:
     base-url: ${WORKSPACE_SERVICE_URL:http://localhost:8087}
+    internal-token: ${INTERNAL_API_TOKEN:dev-internal-token}
+
+notifications:
+  service:
+    base-url: ${NOTIFICATIONS_SERVICE_URL:http://localhost:8082}
     internal-token: ${INTERNAL_API_TOKEN:dev-internal-token}
     zones-cache-ttl-seconds: ${WORKSPACE_ZONES_CACHE_TTL:30}
 

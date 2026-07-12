@@ -7,9 +7,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/room_provider.dart';
 
 const String _agoraAppId = '5db80389fc284a3a8c166979882f118d';
-const String _agoraTestToken =
-    '007eJxTYJDZ/EHjdv33Q0cLf2qbNjpVn1R9/XCZW6FH7lM9lYXC26QUGExTkiwMjC0s05KNLEwSjRMtkg3NzCzNLS0sjNIMDS1SnHfZZjUEMjJ4PjnEysgAgSA+D0NaTmlJSWpRfFFmXjoDAwCeGiM6';
-const String _agoraTestChannel = 'flutter_ring';
+// Replace with fresh token from Agora Console every hour
+const String _agoraFallbackToken = '007eJxTYBA7uDztuuFv2689oSYxH93/bwusNva6UyVs9nriXceAnngFBtOUJAsDYwvLtGQjC5NE40SLZEMzM0tzSwsLozRDQ4sUg59BWQ2BjAy5kYUMjFAI4vMwpOWUlpSkFsUXZealMzAAAHi+IqQ=';
+const String _agoraFallbackChannel = 'flutter_ring';
 
 class RoomCallScreen extends StatefulWidget {
   final String roomId;
@@ -44,7 +44,9 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
       final userId = context.read<AuthProvider>().currentUser?.id ?? 0;
       await provider.initWebSocket();
       await provider.joinRoom(widget.roomId);
-      await _initAgora(_agoraTestChannel, _agoraTestToken, userId);
+      final channelName = provider.agoraChannelName ?? widget.roomId;
+      final token = provider.agoraToken;
+      await _initAgora(channelName, token, userId);
     });
   }
 
@@ -80,9 +82,9 @@ class _RoomCallScreenState extends State<RoomCallScreen> {
     ));
 
     await _engine!.joinChannel(
-      token: agoraToken ?? '',
-      channelId: channelName,
-      uid: 0,
+      token: _agoraFallbackToken,
+      channelId: _agoraFallbackChannel,
+      uid: uid,
       options: const ChannelMediaOptions(
         channelProfile: ChannelProfileType.channelProfileCommunication,
         clientRoleType: ClientRoleType.clientRoleBroadcaster,

@@ -40,6 +40,12 @@ class _RoomsScreenState extends State<RoomsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Rooms'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => context.read<RoomProvider>().loadRooms(_workspaceId),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'rooms_fab',
@@ -72,16 +78,30 @@ class _RoomsScreenState extends State<RoomsScreen> {
                   ),
                 )
               : roomProvider.rooms.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                  ? RefreshIndicator(
+                      onRefresh: () =>
+                          context.read<RoomProvider>().loadRooms(_workspaceId),
+                      child: ListView(
                         children: [
-                          Icon(Icons.meeting_room_outlined,
-                              size: 64,
-                              color: colorScheme.onSurface.withValues(alpha: 0.3)),
-                          const SizedBox(height: 12),
-                          const Text('No rooms yet.\nCreate one to get started.',
-                              textAlign: TextAlign.center),
+                          SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.6,
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.meeting_room_outlined,
+                                      size: 64,
+                                      color: colorScheme.onSurface.withValues(alpha: 0.3)),
+                                  const SizedBox(height: 12),
+                                  const Text('No rooms yet.\nCreate one to get started.',
+                                      textAlign: TextAlign.center),
+                                  const SizedBox(height: 4),
+                                  const Text('Pull down to refresh',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                ],
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     )

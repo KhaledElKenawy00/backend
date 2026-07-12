@@ -17,6 +17,7 @@
  */
 package com.virtualoffice.room_service.service.impl;
 
+import com.virtualoffice.room_service.client.NotificationsPushClient;
 import com.virtualoffice.room_service.client.WorkspaceClient;
 import com.virtualoffice.room_service.client.WorkspaceRole;
 import com.virtualoffice.room_service.dto.mapper.RoomMapper;
@@ -57,6 +58,7 @@ public class RoomServiceImpl implements RoomService {
     private final RoomRepository roomRepository;
     private final RoomChannelEventPublisher publisher;
     private final WorkspaceClient workspaceClient;
+    private final NotificationsPushClient notificationsPushClient;
 
     @Value("${room.agora.channel-prefix}")
     private String agoraChannelPrefix;
@@ -180,6 +182,7 @@ public class RoomServiceImpl implements RoomService {
         } catch (AmqpException e) {
             log.warn("failed to publish ROOM_CHANNEL_ADD_MEMBER for channel {}: {}", room.getChannelId(), e.getMessage());
         }
+        notificationsPushClient.pushMembershipUpdated(targetUserId, "ROOM", room.getWorkspaceId());
     }
 
     @Override

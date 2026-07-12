@@ -128,6 +128,8 @@ class DeskModel {
     String? nickName,
     String? title,
     String? bio,
+    int? positionX,
+    int? positionY,
   }) =>
       DeskModel(
         id: id,
@@ -144,8 +146,8 @@ class DeskModel {
         status: status ?? this.status,
         statusEmoji: statusEmoji ?? this.statusEmoji,
         statusCustomText: statusCustomText ?? this.statusCustomText,
-        positionX: positionX,
-        positionY: positionY,
+        positionX: positionX ?? this.positionX,
+        positionY: positionY ?? this.positionY,
         isOnline: isOnline,
         lastSeenAt: lastSeenAt,
         role: role,

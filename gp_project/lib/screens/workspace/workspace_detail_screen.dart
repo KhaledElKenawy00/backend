@@ -113,6 +113,10 @@ class _DeskTile extends StatelessWidget {
   final DeskModel desk;
   const _DeskTile({required this.desk});
 
+  String _displayName() => desk.fullName.isNotEmpty
+      ? desk.fullName
+      : (desk.workEmail ?? desk.nickName ?? 'Unknown');
+
   Color _statusColor() => switch (desk.status) {
         'ACTIVE' => Colors.green,
         'AWAY' => Colors.orange,
@@ -141,7 +145,7 @@ class _DeskTile extends StatelessWidget {
             CircleAvatar(
               backgroundColor: colorScheme.secondaryContainer,
               child: Text(
-                desk.fullName.isNotEmpty ? desk.fullName[0].toUpperCase() : '?',
+                _displayName()[0].toUpperCase(),
                 style: TextStyle(color: colorScheme.onSecondaryContainer),
               ),
             ),
@@ -160,7 +164,7 @@ class _DeskTile extends StatelessWidget {
             ),
           ],
         ),
-        title: Text(desk.fullName,
+        title: Text(_displayName(),
             style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -207,6 +211,8 @@ class _TeamsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WorkspaceProvider>();
+    final role = provider.myDesk?.role ?? '';
+    final isAdmin = role == 'ADMIN' || role == 'OWNER';
     final body = provider.isLoading && provider.teams.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : provider.teams.isEmpty
@@ -217,23 +223,26 @@ class _TeamsTab extends StatelessWidget {
                 child: ListView.builder(
                   padding: const EdgeInsets.fromLTRB(8, 8, 8, 80),
                   itemCount: provider.teams.length,
-                  itemBuilder: (ctx, i) =>
-                      _TeamTile(team: provider.teams[i], workspaceId: workspaceId),
+                  itemBuilder: (ctx, i) => _TeamTile(
+                      team: provider.teams[i],
+                      workspaceId: workspaceId,
+                      isAdmin: isAdmin),
                 ),
               );
     return Stack(
       children: [
         body,
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            heroTag: 'teams_fab',
-            mini: true,
-            onPressed: () => _showCreateTeamDialog(context),
-            child: const Icon(Icons.add),
+        if (isAdmin)
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton(
+              heroTag: 'teams_fab',
+              mini: true,
+              onPressed: () => _showCreateTeamDialog(context),
+              child: const Icon(Icons.add),
+            ),
           ),
-        ),
       ],
     );
   }
@@ -285,7 +294,8 @@ class _TeamsTab extends StatelessWidget {
 class _TeamTile extends StatelessWidget {
   final TeamModel team;
   final int workspaceId;
-  const _TeamTile({required this.team, required this.workspaceId});
+  final bool isAdmin;
+  const _TeamTile({required this.team, required this.workspaceId, required this.isAdmin});
 
   @override
   Widget build(BuildContext context) {
@@ -296,19 +306,21 @@ class _TeamTile extends StatelessWidget {
         title: Text(team.name,
             style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: team.description != null ? Text(team.description!) : null,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => _showEditDialog(context),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              onPressed: () => _confirmDelete(context),
-            ),
-          ],
-        ),
+        trailing: isAdmin
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _showEditDialog(context),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _confirmDelete(context),
+                  ),
+                ],
+              )
+            : null,
       ),
     );
   }
@@ -472,14 +484,60 @@ class _InvitationsTab extends StatelessWidget {
     );
     if (ok != true) return;
     try {
-      await provider.inviteMember(
+      final inv = await provider.inviteMember(
           workspaceId, emailCtrl.text.trim(), selectedRole);
-      messenger.showSnackBar(
-          const SnackBar(content: Text('Invitation sent!')));
+      if (inv.token != null && context.mounted) {
+        _showTokenDialog(context, inv.token!);
+      } else {
+        messenger.showSnackBar(
+            const SnackBar(content: Text('Invitation sent!')));
+      }
     } catch (e) {
       messenger.showSnackBar(SnackBar(
           content: Text(e.toString().replaceFirst('Exception: ', ''))));
     }
+  }
+
+  void _showTokenDialog(BuildContext context, String token) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Invitation Token'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Share this token with the invitee:',
+                style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                token,
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text('Token expires in 7 days.',
+                style: TextStyle(fontSize: 11, color: Colors.grey)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+            },
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -522,10 +580,36 @@ class _InvitationTile extends StatelessWidget {
           ],
         ),
         trailing: invitation.status == 'PENDING'
-            ? IconButton(
-                icon: const Icon(Icons.cancel_outlined, color: Colors.red),
-                tooltip: 'Revoke',
-                onPressed: () => _revoke(context),
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (invitation.token != null)
+                    IconButton(
+                      icon: const Icon(Icons.key_outlined),
+                      tooltip: 'Show token',
+                      onPressed: () => showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Invitation Token'),
+                          content: SelectableText(
+                            invitation.token!,
+                            style: const TextStyle(
+                                fontFamily: 'monospace', fontSize: 12),
+                          ),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Close')),
+                          ],
+                        ),
+                      ),
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                    tooltip: 'Revoke',
+                    onPressed: () => _revoke(context),
+                  ),
+                ],
               )
             : null,
       ),

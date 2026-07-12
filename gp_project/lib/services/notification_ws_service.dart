@@ -6,6 +6,7 @@ import '../core/network/api_client.dart';
 import 'notification_service.dart';
 
 typedef OnNotificationCallback = void Function(Map<String, dynamic> payload);
+typedef OnMembershipUpdatedCallback = void Function(String type, int workspaceId);
 
 class NotificationWsService {
   final ApiClient _apiClient;
@@ -13,6 +14,7 @@ class NotificationWsService {
   StompClient? _stompClient;
   bool _isConnected = false;
   OnNotificationCallback? _onNotification;
+  OnMembershipUpdatedCallback? _onMembershipUpdated;
 
   NotificationWsService(this._apiClient) {
     _notifService = NotificationService(_apiClient);
@@ -20,12 +22,16 @@ class NotificationWsService {
 
   bool get isConnected => _isConnected;
 
-  Future<void> init({required OnNotificationCallback onNotification}) async {
+  Future<void> init({
+    required OnNotificationCallback onNotification,
+    OnMembershipUpdatedCallback? onMembershipUpdated,
+  }) async {
     if (_isConnected) {
       dev.log('[NOTIF_WS] already connected — skip', name: 'NotificationWsService');
       return;
     }
     _onNotification = onNotification;
+    _onMembershipUpdated = onMembershipUpdated;
 
     try {
       dev.log('[NOTIF_WS] fetching WS ticket…', name: 'NotificationWsService');
@@ -52,6 +58,11 @@ class NotificationWsService {
                   dev.log('[NOTIF_WS] action=$action payload=$payload', name: 'NotificationWsService');
                   if (action == 'NEW_NOTIFICATION') {
                     _onNotification?.call(payload);
+                  } else if (action == 'MEMBERSHIP_UPDATED') {
+                    final type = payload['type'] as String? ?? '';
+                    final wsId = (payload['workspaceId'] as num?)?.toInt() ?? 0;
+                    dev.log('[NOTIF_WS] MEMBERSHIP_UPDATED type=$type wsId=$wsId', name: 'NotificationWsService');
+                    _onMembershipUpdated?.call(type, wsId);
                   }
                 } catch (e) {
                   dev.log('[NOTIF_WS] parse error: $e  body=$body', name: 'NotificationWsService');

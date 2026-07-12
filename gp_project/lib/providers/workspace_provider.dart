@@ -117,6 +117,21 @@ class WorkspaceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> moveMyDesk(int workspaceId, int deskId, int positionX, int positionY) async {
+    if (_myDesk == null) return;
+    _myDesk = _myDesk!.copyWith(positionX: positionX, positionY: positionY);
+    final idx = _desks.indexWhere((d) => d.id == deskId);
+    if (idx != -1) {
+      final list = List<DeskModel>.from(_desks);
+      list[idx] = _myDesk!;
+      _desks = list;
+    }
+    notifyListeners();
+    try {
+      await _service.updateDeskPosition(workspaceId, deskId, positionX, positionY);
+    } catch (_) {}
+  }
+
   Future<void> updateMyDeskStatus(int workspaceId, int deskId, {
     required String status,
     String? statusEmoji,
@@ -184,10 +199,11 @@ class WorkspaceProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> inviteMember(int workspaceId, String email, String role) async {
+  Future<InvitationModel> inviteMember(int workspaceId, String email, String role) async {
     final inv = await _service.inviteMember(workspaceId, email, role);
     _invitations = [inv, ..._invitations];
     notifyListeners();
+    return inv;
   }
 
   Future<void> revokeInvitation(int workspaceId, int invitationId) async {

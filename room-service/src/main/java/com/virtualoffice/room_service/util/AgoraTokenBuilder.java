@@ -14,16 +14,6 @@ public class AgoraTokenBuilder {
 
     private static final String VERSION = "007";
 
-    /**
-     * Build an Agora RTC token (AccessToken v2).
-     *
-     * @param appId           Agora App ID (32-char hex)
-     * @param appCertificate  Agora App Certificate (32-char hex)
-     * @param channelName     Agora channel name
-     * @param uid             User ID (0 = wildcard, any user can join)
-     * @param expireSeconds   Token lifetime in seconds
-     * @return "007..." token string, or empty string if certificate is blank
-     */
     public static String buildToken(String appId, String appCertificate,
                                     String channelName, int uid, int expireSeconds) {
         if (appCertificate == null || appCertificate.isBlank()) {
@@ -31,48 +21,45 @@ public class AgoraTokenBuilder {
         }
         try {
             int issuedAt = (int) (System.currentTimeMillis() / 1000);
-            int expireAt = issuedAt + expireSeconds;
-            int salt = new Random().nextInt(Integer.MAX_VALUE);
+            int salt = new Random().nextInt(Integer.MAX_VALUE) + 1;
 
-            byte[] msg = packMessage(appId, issuedAt, expireAt, salt, channelName, uid, expireAt);
-            byte[] sig = hmacSha256(appCertificate.getBytes(StandardCharsets.UTF_8), msg);
-            byte[] content = concat(msg, sig);
-            byte[] compressed = zlibCompress(content);
-            return VERSION + Base64.getEncoder().encodeToString(compressed);
+            byte[] content = packContent(appId, issuedAt, expireSeconds, salt,
+                                         channelName, uid, expireSeconds);
+            byte[] sig = hmacSha256(appCertificate.getBytes(StandardCharsets.UTF_8), content);
+
+            ByteArrayOutputStream body = new ByteArrayOutputStream();
+            body.write(uint16LE(sig.length));
+            body.write(sig);
+            body.write(content);
+
+            return VERSION + Base64.getEncoder().encodeToString(zlibCompress(body.toByteArray()));
         } catch (Exception e) {
             throw new RuntimeException("Failed to build Agora token", e);
         }
     }
 
-    private static byte[] packMessage(String appId, int issuedAt, int expireAt, int salt,
+    private static byte[] packContent(String appId, int issuedAt, int expire, int salt,
                                       String channelName, int uid, int privilegeExpire) throws Exception {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
 
-        buf.write(1); // version
-
-        buf.write(appId.getBytes(StandardCharsets.UTF_8)); // appId: fixed 32 bytes, no length prefix
+        // appId as packed string (length-prefixed) — not raw bytes
+        packString(buf, appId);
         buf.write(uint32LE(issuedAt));
-        buf.write(uint32LE(expireAt));
+        buf.write(uint32LE(expire));        // relative seconds, not absolute timestamp
         buf.write(uint32LE(salt));
 
-        // 1 service
-        buf.write(uint16LE(1));
+        buf.write(uint16LE(1));             // numServices = 1
 
-        // Service type RTC = 1
-        buf.write(uint16LE(1));
+        buf.write(uint16LE(1));             // serviceType = RTC
 
+        // Privileges come BEFORE channelName/uid
+        buf.write(uint16LE(1));             // numPrivileges = 1
+        buf.write(uint16LE(1));             // privilege key = JOIN_CHANNEL
+        buf.write(uint32LE(privilegeExpire)); // relative seconds
+
+        // Channel name and uid
         packString(buf, channelName);
-
-        // uid as unsigned decimal string; "" means wildcard
-        String uidStr = uid == 0 ? "" : Integer.toUnsignedString(uid);
-        packString(buf, uidStr);
-
-        // 4 privileges: JOIN=1, AUDIO=2, VIDEO=3, DATA=4
-        buf.write(uint16LE(4));
-        for (int key = 1; key <= 4; key++) {
-            buf.write(uint16LE(key));
-            buf.write(uint32LE(privilegeExpire));
-        }
+        packString(buf, uid == 0 ? "" : Integer.toUnsignedString(uid));
 
         return buf.toByteArray();
     }
@@ -95,13 +82,6 @@ public class AgoraTokenBuilder {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(key, "HmacSHA256"));
         return mac.doFinal(data);
-    }
-
-    private static byte[] concat(byte[] a, byte[] b) {
-        byte[] result = new byte[a.length + b.length];
-        System.arraycopy(a, 0, result, 0, a.length);
-        System.arraycopy(b, 0, result, a.length, b.length);
-        return result;
     }
 
     private static byte[] zlibCompress(byte[] data) {

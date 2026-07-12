@@ -35,18 +35,20 @@ class RoomProvider extends ChangeNotifier {
   bool get isInRoom => _isInRoom;
   String? get error => _error;
 
-  Future<void> loadRooms(int workspaceId) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+  Future<void> loadRooms(int workspaceId, {bool silent = false}) async {
+    if (!silent) {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+    }
     try {
       _rooms = await _roomService.getRooms(workspaceId);
       dev.log('[ROOM_PROVIDER] loaded ${_rooms.length} rooms', name: 'RoomProvider');
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
+      if (!silent) _error = e.toString().replaceFirst('Exception: ', '');
       dev.log('[ROOM_PROVIDER] loadRooms error: $e', name: 'RoomProvider');
     } finally {
-      _isLoading = false;
+      if (!silent) _isLoading = false;
       notifyListeners();
     }
   }

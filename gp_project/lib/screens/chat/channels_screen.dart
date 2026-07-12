@@ -63,10 +63,11 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
             title: const Text('New Channel'),
             content: SizedBox(
               width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                   TextField(
                     controller: nameController,
                     autofocus: true,
@@ -118,6 +119,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                       ),
                     ),
                 ],
+                ),
               ),
             ),
             actions: [
@@ -194,22 +196,35 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
       body: chatProvider.isLoadingChannels
           ? const Center(child: CircularProgressIndicator())
           : chatProvider.channels.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+              ? RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: ListView(
                     children: [
-                      Icon(Icons.tag,
-                          size: 64,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.3)),
-                      const SizedBox(height: 16),
-                      const Text('No channels yet'),
-                      const SizedBox(height: 8),
-                      FilledButton.tonal(
-                        onPressed: _showCreateChannelDialog,
-                        child: const Text('Create one'),
+                      SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.6,
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.tag,
+                                  size: 64,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.3)),
+                              const SizedBox(height: 16),
+                              const Text('No channels yet'),
+                              const SizedBox(height: 4),
+                              const Text('Pull down to refresh',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+                              const SizedBox(height: 8),
+                              FilledButton.tonal(
+                                onPressed: _showCreateChannelDialog,
+                                child: const Text('Create one'),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
                   ),
